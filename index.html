@@ -1,0 +1,2737 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>GTA 2D 경찰 추격전 - 엔드리스 체이스</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Oswald:wght@700&family=Noto+Sans+KR:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #0b0d10;
+            font-family: 'Noto Sans KR', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+        }
+
+        .gta-font {
+            font-family: 'Black Han Sans', 'Oswald', sans-serif;
+            letter-spacing: 1.5px;
+            text-shadow: 2px 2px 0px #000, -1px -1px 0px #000, 1px -1px 0px #000, -1px 1px 0px #000;
+        }
+
+        .gta-cash {
+            font-family: 'Oswald', monospace;
+            letter-spacing: 1px;
+            text-shadow: 2px 2px 0px #000, -1px -1px 0px #000;
+        }
+
+        /* 수배 별 점멸 애니메이션 */
+        @keyframes starPulse {
+            0%, 100% { color: #facc15; transform: scale(1); filter: drop-shadow(0 0 6px #ef4444); }
+            50% { color: #fef08a; transform: scale(1.16); filter: drop-shadow(0 0 11px #3b82f6); }
+        }
+        .star-active {
+            animation: starPulse 0.7s infinite;
+        }
+        .star-off {
+            color: rgba(255, 255, 255, 0.2);
+        }
+
+        /* 경광등 화면 외곽 효과 */
+        @keyframes sirenEdge {
+            0%, 100% { box-shadow: inset 0 0 42px rgba(239, 68, 68, 0.25); }
+            50% { box-shadow: inset 0 0 42px rgba(59, 130, 246, 0.25); }
+        }
+        .siren-overlay {
+            pointer-events: none;
+            animation: sirenEdge 0.8s infinite;
+        }
+
+        /* WASTED 슬로우모션 흑백 필터 */
+        .wasted-canvas {
+            filter: grayscale(85%) contrast(125%) brightness(75%);
+            transition: filter 1.1s ease;
+        }
+
+        .touch-btn {
+            background: rgba(15, 23, 42, 0.58);
+            backdrop-filter: blur(4px);
+            border: 2px solid rgba(255, 255, 255, 0.28);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 800;
+        }
+        .touch-btn:active, .touch-btn.pressed {
+            background: rgba(255, 255, 255, 0.35);
+            transform: scale(0.94);
+        }
+
+        canvas#gameCanvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            cursor: crosshair;
+        }
+    </style>
+</head>
+<body class="relative w-screen h-screen overflow-hidden bg-neutral-950 text-white">
+
+    <!-- 메인 게임 캔버스 -->
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- 경광등 외곽선 오버레이 -->
+    <div id="sirenOverlay" class="fixed inset-0 siren-overlay hidden z-10"></div>
+
+    <!-- GTA 클래식 HUD -->
+    <div id="gameHUD" class="fixed inset-0 pointer-events-none z-20 hidden flex flex-col justify-between p-4 sm:p-5">
+        
+        <!-- 상단 영역 -->
+        <div class="flex justify-between items-start w-full">
+            <!-- 좌측 상단: 조작 가이드 & 생존 시간 -->
+            <div class="flex flex-col gap-2">
+                <div class="hidden md:flex flex-wrap gap-2.5 bg-black/60 backdrop-blur-md px-3.5 py-2 rounded-xl border border-white/10 text-xs text-gray-200">
+                    <span><b class="text-amber-400">WASD / 방향키</b> 운전</span>
+                    <span>•</span>
+                    <span><b class="text-rose-400">SPACE</b> 드리프트</span>
+                    <span>•</span>
+                    <span><b class="text-cyan-300">SHIFT</b> 니트로</span>
+                    <span>•</span>
+                    <span><b class="text-emerald-400">마우스 좌클릭</b> 드라이브 바이 사격</span>
+                    <span>•</span><span><b class="text-violet-300">E</b> 내리기 / 다시 타기</span>
+                </div>
+
+                <div class="self-start bg-black/60 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-white/10 flex items-center gap-2">
+                    <span class="text-xs text-gray-400 font-bold">도주 시간</span>
+                    <span id="timerDisplay" class="gta-cash text-lg font-bold text-white">00:00</span>
+                </div>
+            </div>
+
+            <!-- 우측 상단: 현금, 차량 내구도, 수배 별 + 수배 게이지 -->
+            <div class="flex flex-col items-end gap-1.5 ml-auto">
+                <div class="flex items-center gap-2 pointer-events-auto">
+                    <button id="muteBtn" class="bg-black/65 hover:bg-black/85 text-white px-2.5 py-1.5 rounded-lg border border-white/20 text-xs font-bold shadow">
+                        <span id="muteIcon">🔊</span>
+                    </button>
+                </div>
+
+                <div class="flex flex-col items-end bg-black/60 backdrop-blur-md px-4 py-2.5 rounded-xl border border-white/15 shadow-xl">
+                    <!-- 현금 표시 -->
+                    <div id="cashDisplay" class="gta-cash text-2xl sm:text-3xl font-bold text-emerald-400 leading-none">
+                        $00000000
+                    </div>
+
+                    <!-- 차량 내구도 바 -->
+                    <div class="w-40 sm:w-48 mt-2.5">
+                        <div class="flex justify-between text-[10px] font-bold text-amber-300 mb-0.5">
+                            <span>차량 내구도</span>
+                            <span id="carHpText">100%</span>
+                        </div>
+                        <div class="w-full h-2.5 bg-gray-800 rounded-full overflow-hidden border border-white/15">
+                            <div id="carHpBar" class="h-full bg-amber-400 transition-all duration-100" style="width: 100%;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 수배 별 (★1 ~ ★6) + 다음 별 상승 게이지 -->
+                <div class="bg-black/60 backdrop-blur-md px-4 py-2 rounded-xl border border-white/15 flex flex-col items-end w-48 sm:w-56">
+                    <div id="wantedStars" class="flex gap-1 text-xl sm:text-2xl leading-none">
+                        <span class="star-active">★</span>
+                        <span class="star-off">★</span>
+                        <span class="star-off">★</span>
+                        <span class="star-off">★</span>
+                        <span class="star-off">★</span>
+                        <span class="star-off">★</span>
+                    </div>
+                    <!-- 별 상승 게이지 -->
+                    <div class="w-full mt-1.5">
+                        <div class="flex justify-between text-[10px] font-bold text-gray-300 mb-0.5">
+                            <span id="wantedRankLabel">수배 1단계</span>
+                            <span id="wantedHeatText">0%</span>
+                        </div>
+                        <div class="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                            <div id="wantedHeatBar" class="h-full bg-gradient-to-r from-amber-400 to-rose-500 transition-all duration-100" style="width: 0%;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 중앙 상단 알림 배너 -->
+        <div id="toastContainer" class="fixed top-28 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1.5 pointer-events-none z-30"></div>
+
+        <!-- 하단 영역: 좌측 하단 레이더 미니맵(강 & 다리 표시) | 우측 하단 속도계 & 니트로 -->
+        <div class="flex justify-between items-end w-full">
+            <!-- 좌측 하단 미니맵 레이더 -->
+            <div class="relative rounded-full overflow-hidden border-[3px] border-neutral-300/80 shadow-2xl bg-neutral-900/95" style="width: 152px; height: 152px;">
+                <canvas id="minimapCanvas" width="152" height="152"></canvas>
+                <div class="absolute bottom-1.5 inset-x-0 text-center text-[9px] font-black tracking-widest text-white/85 drop-shadow">
+                    RADAR • BRIDGE
+                </div>
+            </div>
+
+            <!-- 우측 하단 디지털 속도계 & 니트로 -->
+            <div class="hidden sm:flex flex-col items-end gap-1.5 bg-black/60 backdrop-blur-md px-4 py-2.5 rounded-xl border border-white/15">
+                <div class="flex items-baseline gap-1.5">
+                    <span id="speedDisplay" class="gta-cash text-3xl font-bold text-white">0</span>
+                    <span class="text-xs font-bold text-amber-400">KM/H</span>
+                </div>
+                <div class="w-28 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                    <div id="nitroBar" class="h-full bg-cyan-400" style="width: 100%;"></div>
+                </div>
+                <span class="text-[10px] text-cyan-300 font-bold">NITRO (SHIFT)</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 모바일 터치 컨트롤 -->
+    <div id="mobileControls" class="fixed inset-x-0 bottom-4 px-4 justify-between items-end z-30 hidden md:hidden pointer-events-none">
+        <div class="flex gap-2.5 pointer-events-auto">
+            <button id="btnLeft" class="touch-btn w-14 h-14 p-3.5 text-lg">◀</button>
+            <button id="btnRight" class="touch-btn w-14 h-14 p-3.5 text-lg">▶</button>
+        </div>
+        <div class="flex flex-col gap-2 items-end pointer-events-auto">
+            <div class="flex gap-2">
+                <button id="btnShoot" class="touch-btn px-3.5 py-2 rounded-xl text-xs bg-rose-600/45 border-rose-400">사격</button>
+                <button id="btnNitro" class="touch-btn px-3.5 py-2 rounded-xl text-xs bg-cyan-600/45 border-cyan-400">니트로</button>
+                <button id="btnEnterExit" class="touch-btn px-3 py-2 rounded-xl text-xs bg-violet-600/45 border-violet-400">내리기</button>
+            </div>
+            <div class="flex gap-2.5">
+                <button id="btnBrake" class="touch-btn w-14 h-14 p-3 text-xs bg-amber-600/45 border-amber-400">후진</button>
+                <button id="btnGas" class="touch-btn w-16 h-16 p-4 text-sm bg-emerald-600/45 border-emerald-400">가속</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 시작 화면 -->
+    <div id="startScreen" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-40 flex items-center justify-center p-4">
+        <div class="max-w-lg w-full bg-neutral-900/95 border border-white/15 rounded-2xl p-6 sm:p-8 text-center shadow-2xl relative overflow-hidden">
+            <div class="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-pink-500 via-amber-400 to-cyan-400"></div>
+            
+            <span class="inline-block px-3 py-1 rounded-full bg-rose-500/20 border border-rose-500/40 text-rose-400 text-xs font-black tracking-widest mb-2">
+                ENDLESS POLICE PURSUIT
+            </span>
+            <h1 class="gta-font text-4xl sm:text-5xl text-white mb-2">GTA 2D 경찰 추격전</h1>
+            <p class="text-gray-400 text-sm mb-5">끝없이 펼쳐진 강과 다리를 건너며 경찰의 추격 속에서 최대한 오래 살아남으세요!</p>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left text-xs bg-black/55 p-4 rounded-xl border border-white/10 mb-6">
+                <div class="space-y-1.5">
+                    <div class="text-cyan-400 font-black text-sm">🌉 무한 도시 & 강/다리</div>
+                    <p class="text-gray-300">• 맵 경계 없이 끝없이 이어지는 도시와 거대한 강줄기!</p>
+                    <p class="text-gray-300">• 강에 빠지면 차량이 침수되니 미니맵의 <b class="text-amber-300">다리</b>를 찾아 건너세요.</p>
+                </div>
+                <div class="space-y-1.5">
+                    <div class="text-amber-400 font-black text-sm">⭐ 수배 등급 상승 (★1~★6)</div>
+                    <p class="text-gray-300">• 오래 도망칠수록 수배 게이지가 서서히 차오릅니다.</p>
+                    <p class="text-gray-300">• <b class="text-rose-400">경찰차 파괴, 시민 충격</b> 등 난폭한 행동을 할수록 별이 빠르게 늘어납니다!</p>
+                </div>
+            </div>
+            <button id="startBtn" class="w-full py-4 rounded-xl bg-gradient-to-r from-pink-600 via-rose-600 to-amber-500 hover:brightness-110 text-white font-black text-lg tracking-wider shadow-lg shadow-rose-600/30 transition transform hover:scale-[1.01] active:scale-[0.99]">
+                도주 시작 (PLAY)
+            </button>
+        </div>
+    </div>
+
+    <!-- WASTED 결과 화면 -->
+    <div id="gameOverScreen" class="fixed inset-0 bg-black/75 z-40 hidden flex items-center justify-center p-4">
+        <div class="max-w-md w-full bg-neutral-900/95 border border-white/15 rounded-2xl p-6 sm:p-8 text-center shadow-2xl">
+            <h2 class="gta-font text-6xl sm:text-7xl text-rose-500 mb-1 tracking-wider">WASTED</h2>
+            <p id="endReasonText" class="text-gray-400 text-sm mb-6">경찰의 포위망에 의해 차량이 파괴되었습니다.</p>
+
+            <div class="bg-black/65 rounded-xl p-4 mb-6 space-y-2.5 border border-white/10 text-sm">
+                <div class="flex justify-between border-b border-white/10 pb-2">
+                    <span class="text-gray-400">도주 생존 시간</span>
+                    <span id="statTime" class="font-black text-white text-lg">0.0초</span>
+                </div>
+                <div class="flex justify-between border-b border-white/10 pb-2">
+                    <span class="text-gray-400">최고 수배 등급</span>
+                    <span id="statMaxStars" class="font-bold text-amber-400">★1</span>
+                </div>
+                <div class="flex justify-between border-b border-white/10 pb-2">
+                    <span class="text-gray-400">파괴한 경찰차</span>
+                    <span id="statCops" class="font-bold text-cyan-400">0대</span>
+                </div>
+                <div class="flex justify-between border-b border-white/10 pb-2">
+                    <span class="text-gray-400">시민/기물 피해</span>
+                    <span id="statCivs" class="font-bold text-rose-400">0건</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-400">획득 현금</span>
+                    <span id="statCash" class="font-bold text-emerald-400">$0</span>
+                </div>
+            </div>
+
+            <button id="restartBtn" class="w-full py-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:brightness-110 text-white font-black text-lg tracking-wider shadow-lg transition transform hover:scale-[1.01]">
+                다시 도주하기 (RESTART)
+            </button>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * ============================================================================
+         * 1. WEB AUDIO API 사운드 합성 엔진
+         * ============================================================================
+         */
+        class ChaseSoundEngine {
+            constructor() {
+                this.ctx = null;
+                this.muted = false;
+                this.initialized = false;
+                this.engineOsc = null;
+                this.engineGain = null;
+                this.sirenOsc = null;
+                this.sirenGain = null;
+                this.sirenPhase = 0;
+            }
+
+            init() {
+                if (this.initialized) return;
+                try {
+                    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                    this.ctx = new AudioCtx();
+
+                    this.engineOsc = this.ctx.createOscillator();
+                    this.engineOsc.type = 'sawtooth';
+                    this.engineOsc.frequency.value = 48;
+
+                    const filter = this.ctx.createBiquadFilter();
+                    filter.type = 'lowpass';
+                    filter.frequency.value = 160;
+
+                    this.engineGain = this.ctx.createGain();
+                    this.engineGain.gain.value = 0;
+
+                    this.engineOsc.connect(filter);
+                    filter.connect(this.engineGain);
+                    this.engineGain.connect(this.ctx.destination);
+                    this.engineOsc.start();
+
+                    this.sirenOsc = this.ctx.createOscillator();
+                    this.sirenOsc.type = 'triangle';
+                    this.sirenOsc.frequency.value = 720;
+
+                    this.sirenGain = this.ctx.createGain();
+                    this.sirenGain.gain.value = 0;
+
+                    this.sirenOsc.connect(this.sirenGain);
+                    this.sirenGain.connect(this.ctx.destination);
+                    this.sirenOsc.start();
+
+                    this.initialized = true;
+                } catch (e) {
+                    console.warn('Audio init skipped:', e);
+                }
+            }
+
+            toggleMute() {
+                this.muted = !this.muted;
+                if (this.muted && this.initialized) {
+                    this.engineGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.05);
+                    this.sirenGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.05);
+                }
+                return this.muted;
+            }
+
+            updateContinuous(active, speedRatio, wantedLevel, dt) {
+                if (!this.initialized || this.muted) return;
+                if (this.ctx.state === 'suspended') this.ctx.resume();
+
+                const now = this.ctx.currentTime;
+                if (!active) {
+                    this.engineGain.gain.setTargetAtTime(0, now, 0.1);
+                    this.sirenGain.gain.setTargetAtTime(0, now, 0.1);
+                    return;
+                }
+
+                const freq = 42 + Math.abs(speedRatio) * 95;
+                this.engineOsc.frequency.setTargetAtTime(freq, now, 0.08);
+                this.engineGain.gain.setTargetAtTime(0.04 + Math.abs(speedRatio) * 0.035, now, 0.08);
+
+                this.sirenPhase += dt * (4.2 + wantedLevel * 0.45);
+                const sFreq = 730 + Math.sin(this.sirenPhase) * 220;
+                this.sirenOsc.frequency.setTargetAtTime(sFreq, now, 0.05);
+                this.sirenGain.gain.setTargetAtTime(0.025 + wantedLevel * 0.004, now, 0.1);
+            }
+
+            playGunshot() {
+                if (!this.initialized || this.muted) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(380, now);
+                osc.frequency.exponentialRampToValueAtTime(55, now + 0.085);
+                gain.gain.setValueAtTime(0.11, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.095);
+            }
+
+            playCrash(intensity = 1) {
+                if (!this.initialized || this.muted) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(105 * Math.min(1.5, intensity), now);
+                osc.frequency.exponentialRampToValueAtTime(24, now + 0.15);
+                gain.gain.setValueAtTime(Math.min(0.2, 0.09 * intensity), now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.17);
+            }
+
+            playExplosion() {
+                if (!this.initialized || this.muted) return;
+                const now = this.ctx.currentTime;
+                const bufSize = this.ctx.sampleRate * 0.6;
+                const buf = this.ctx.createBuffer(1, bufSize, this.ctx.sampleRate);
+                const data = buf.getChannelData(0);
+                for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
+
+                const noise = this.ctx.createBufferSource();
+                noise.buffer = buf;
+
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.setValueAtTime(520, now);
+                filter.frequency.exponentialRampToValueAtTime(45, now + 0.58);
+
+                const gain = this.ctx.createGain();
+                gain.gain.setValueAtTime(0.35, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+
+                noise.connect(filter);
+                filter.connect(gain);
+                gain.connect(this.ctx.destination);
+                noise.start(now);
+                noise.stop(now + 0.61);
+            }
+
+            playSplash() {
+                if (!this.initialized || this.muted) return;
+                const now = this.ctx.currentTime;
+                const bufSize = this.ctx.sampleRate * 0.7;
+                const buf = this.ctx.createBuffer(1, bufSize, this.ctx.sampleRate);
+                const data = buf.getChannelData(0);
+                for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
+
+                const noise = this.ctx.createBufferSource();
+                noise.buffer = buf;
+
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'bandpass';
+                filter.frequency.setValueAtTime(850, now);
+                filter.frequency.exponentialRampToValueAtTime(180, now + 0.68);
+
+                const gain = this.ctx.createGain();
+                gain.gain.setValueAtTime(0.32, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
+
+                noise.connect(filter);
+                filter.connect(gain);
+                gain.connect(this.ctx.destination);
+                noise.start(now);
+                noise.stop(now + 0.71);
+            }
+
+            playStarUp() {
+                if (!this.initialized || this.muted) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(520, now);
+                osc.frequency.setValueAtTime(780, now + 0.1);
+                gain.gain.setValueAtTime(0.16, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.3);
+            }
+        }
+
+        const sound = new ChaseSoundEngine();
+
+        /**
+         * ============================================================================
+         * 2. 무한 월드 청크(강 & 다리 & 도시 블록) 프로시저럴 생성기
+         * ============================================================================
+         */
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const minimapCanvas = document.getElementById('minimapCanvas');
+        const minimapCtx = minimapCanvas.getContext('2d');
+
+        // 무한 그리드 셀 크기 설정 (여유로운 주행을 위해 도로 폭을 넓게 설계)
+        const BLOCK_SIZE = 520;
+        const ROAD_WIDTH = 240;
+        const CELL_SIZE = BLOCK_SIZE + ROAD_WIDTH; // 760px 단위 무한 타일
+
+        // 주기적 강(River) 배치 규칙: 5칸마다 거대한 강줄기 생성 (셀 인덱스 기준)
+        const RIVER_PERIOD = 5;
+
+        // 결정론적 해시 함수 (무한 맵에서 같은 좌표는 항상 동일한 건물/다리 생성)
+        function hash2D(gx, gy) {
+            let n = Math.sin(gx * 127.1 + gy * 311.7) * 43758.5453123;
+            return n - Math.floor(n);
+        }
+
+        // 해당 그리드 좌표(gx, gy)가 강(River) 셀인지 판별
+        function isRiverCell(gx, gy) {
+            if (Math.abs(gx) <= 1 && Math.abs(gy) <= 1) return false;
+            const mx = ((gx % RIVER_PERIOD) + RIVER_PERIOD) % RIVER_PERIOD;
+            const my = ((gy % RIVER_PERIOD) + RIVER_PERIOD) % RIVER_PERIOD;
+            return mx === 3 || my === 3;
+        }
+
+        // 선택한 맵의 강줄기 규칙과 같은 주기로 다리를 배치
+        function hasBridgeAt(gx, gy) {
+            const mx = ((gx % RIVER_PERIOD) + RIVER_PERIOD) % RIVER_PERIOD;
+            const my = ((gy % RIVER_PERIOD) + RIVER_PERIOD) % RIVER_PERIOD;
+            if (mx === 3 && my === 3) return { horizontal: true, vertical: true };
+            if (mx === 3) return { horizontal: (((gy % 2) + 2) % 2 === 0), vertical: false };
+            if (my === 3) return { horizontal: false, vertical: (((gx % 2) + 2) % 2 === 0) };
+            return { horizontal: false, vertical: false };
+        }
+
+        // 활성화된 주변 청크 캐시 (Map<"gx,gy", ChunkData>)
+        const chunkCache = new Map();
+
+        function getChunk(gx, gy) {
+            const key = `${gx},${gy}`;
+            if (chunkCache.has(key)) return chunkCache.get(key);
+
+            const cellX = gx * CELL_SIZE - CELL_SIZE / 2;
+            const cellY = gy * CELL_SIZE - CELL_SIZE / 2;
+            const river = isRiverCell(gx, gy);
+            const bridges = river ? hasBridgeAt(gx, gy) : { horizontal: false, vertical: false };
+            // 맵마다 구역 분포를 다르게 하고 공원은 인접 블록과 떨어뜨림
+            const districtRoll = hash2D(Math.floor(gx / 2), Math.floor(gy / 2));
+            let isolatedPark = hash2D(gx, gy) < 0.08;
+            for (let ox = -1; ox <= 1; ox++) for (let oy = -1; oy <= 1; oy++) {
+                if ((ox || oy) && hash2D(gx + ox, gy + oy) < 0.08) isolatedPark = false;
+            }
+            const startZone = Math.abs(gx) <= 1 && Math.abs(gy) <= 1;
+            const landmark = gy === 0 && gx === 2;
+            const plazaRoll = hash2D(gx + 41, gy - 23);
+            const district = landmark ? 'station' : startZone ? 'midtown' : isolatedPark ? 'park' : plazaRoll < 0.035 ? 'plaza' : districtRoll < 0.30 ? 'industrial' : districtRoll < 0.57 ? 'residential' : districtRoll < 0.82 ? 'commercial' : 'downtown';
+
+            const buildings = [];
+            const props = [];
+
+            if (!river) {
+                const bx = cellX + ROAD_WIDTH / 2;
+                const by = cellY + ROAD_WIDTH / 2;
+                if (district === 'park') {
+                    // 공원 내부 나무: 기물 충돌 처리로 차량에 부딪히면 쓰러짐
+                    for (const tx of [78, 442]) for (const ty of [82, 218, 438]) {
+                        props.push({ x: bx + tx, y: by + ty, type: 'tree', broken: false });
+                    }
+                } else if (district === 'plaza') {
+                    // 드문 도심 광장: 중앙 분수와 주변 벤치가 있는 열린 공간
+                    props.push({ x: bx + BLOCK_SIZE / 2, y: by + BLOCK_SIZE / 2, type: 'fountain', broken: false });
+                    for (const [ox, oy] of [[-92, -52], [92, -52], [-92, 52], [92, 52]])
+                        props.push({ x: bx + BLOCK_SIZE / 2 + ox, y: by + BLOCK_SIZE / 2 + oy, type: 'bench', broken: false });
+                } else {
+                // 도시 블록 내부 건물 & 기물 생성
+                const pad = 24;
+                const ix = bx + pad;
+                const iy = by + pad;
+                const iw = BLOCK_SIZE - pad * 2;
+                const ih = BLOCK_SIZE - pad * 2;
+
+                const roofColors = district === 'midtown'
+                    ? ['#24364a', '#304354', '#273b4e', '#3a4650', '#2d3b4c', '#344d5b']
+                    : district === 'industrial'
+                        ? ['#51483d', '#3e4343', '#58443c', '#454b50', '#5b5147', '#3f4743']
+                        : district === 'residential'
+                            ? ['#593b32', '#67443a', '#4c3934', '#70483b', '#574039', '#654b40']
+                            : district === 'commercial'
+                                ? ['#252d3c', '#303047', '#28353e', '#3c3042', '#303b42', '#392f35']
+                                : ['#232730', '#2b303b', '#30282b', '#243036', '#2a2a33', '#3b2f3f', '#263a36', '#40362c', '#263345'];
+                const neonColors = district === 'industrial'
+                    ? ['#f97316', '#eab308', '#a3a3a3', '#fb7185']
+                    : district === 'commercial'
+                        ? ['#ec4899', '#06b6d4', '#f59e0b', '#8b5cf6', '#38bdf8']
+                        : ['#ec4899', '#06b6d4', '#f59e0b', '#10b981', '#8b5cf6', '#fb7185', '#a3e635', '#38bdf8'];
+                const h1 = hash2D(gx, gy);
+                const h2 = hash2D(gx + 19, gy - 7);
+                const h3 = hash2D(gx - 13, gy + 29);
+                const roof = (v) => roofColors[Math.floor(v * roofColors.length) % roofColors.length];
+                const neon = (v) => neonColors[Math.floor(v * neonColors.length) % neonColors.length];
+                const addBuilding = (x, y, w, h, seed, accentSeed) => {
+                    const jitterX = (hash2D(gx + Math.floor(seed * 31), gy + 17) - 0.5) * 6;
+                    const jitterY = (hash2D(gx - 11, gy + Math.floor(accentSeed * 29)) - 0.5) * 6;
+                    const styleSeed = hash2D(gx + Math.floor(seed * 17), gy + Math.floor(accentSeed * 23));
+                    buildings.push({ x: x + jitterX, y: y + jitterY, w, h, color: roof(seed), accent: neon(accentSeed), style: Math.floor(styleSeed * 4), district,
+                        stories: district === 'midtown' ? 18 + Math.floor(styleSeed * 34) : 2 + Math.floor(styleSeed * 4),
+                        helipad: district === 'midtown' && styleSeed > 0.72 });
+                };
+                const gap = 18;
+                const layout = Math.floor(h1 * 5);
+                if (district === 'station') {
+                    // 중앙역 터미널: 넓은 중앙 홀과 양옆의 플랫폼 동
+                    addBuilding(ix + iw * 0.16, iy + ih * 0.05, iw * 0.68, ih * 0.52, h1, h2);
+                    addBuilding(ix + iw * 0.04, iy + ih * 0.68, iw * 0.40, ih * 0.25, h2, h3);
+                    addBuilding(ix + iw * 0.56, iy + ih * 0.68, iw * 0.40, ih * 0.25, h3, h1);
+                } else if (district === 'midtown') {
+                    // 맨해튼 미드타운: 블록을 촘촘히 채운 고층 타워와 중앙 서비스 통로
+                    const towerW = iw * 0.43, towerH = ih * 0.43;
+                    addBuilding(ix + iw * 0.035, iy + ih * 0.035, towerW, towerH, h1, h2);
+                    addBuilding(ix + iw * 0.535, iy + ih * 0.035, towerW, towerH, h2, h3);
+                    addBuilding(ix + iw * 0.035, iy + ih * 0.535, towerW, towerH, h3, h1);
+                    addBuilding(ix + iw * 0.535, iy + ih * 0.535, towerW, towerH, h2, h1);
+                } else if (district === 'industrial') {
+                    // 창고와 별관이 분리된 공업 구역 배치
+                    addBuilding(ix, iy + ih * 0.08, iw * (0.56 + h2 * 0.12), ih * 0.72, h1, h3);
+                    addBuilding(ix + iw * 0.64, iy + ih * 0.10, iw * 0.30, ih * 0.32, h2, h1);
+                    addBuilding(ix + iw * 0.64, iy + ih * 0.52, iw * 0.30, ih * 0.27, h3, h2);
+                } else if (district === 'residential') {
+                    // 주택가: 넓은 마당 사이에 작은 건물 6채를 분산 배치
+                    for (let row = 0; row < 3; row++) for (let col = 0; col < 2; col++) {
+                        const hx = ix + iw * (0.04 + col * 0.51);
+                        const hy = iy + ih * (0.035 + row * 0.32);
+                        const hw = iw * (0.39 + hash2D(gx + col * 7, gy + row * 11) * 0.06);
+                        const hh = ih * (0.23 + hash2D(gx + row * 13, gy - col * 5) * 0.05);
+                        addBuilding(hx, hy, hw, hh, hash2D(gx + col + row * 3, gy + 5), hash2D(gx - 7, gy + row + col * 2));
+                    }
+                } else if (district === 'commercial') {
+                    // 상업가: 중앙 보행 통로를 남긴 좌우 매장 빌딩
+                    addBuilding(ix + iw * 0.03, iy + ih * 0.04, iw * 0.40, ih * 0.91, h1, h2);
+                    addBuilding(ix + iw * 0.57, iy + ih * 0.04, iw * 0.40, ih * 0.91, h2, h3);
+                } else if (layout === 0) {
+                    const leftW = iw * (0.38 + h2 * 0.2);
+                    addBuilding(ix, iy, leftW - gap / 2, ih, h1, h2);
+                    addBuilding(ix + leftW + gap / 2, iy, iw - leftW - gap / 2, ih, h2, h3);
+                } else if (layout === 1) {
+                    const topH = ih * (0.36 + h2 * 0.24);
+                    addBuilding(ix, iy, iw, topH - gap / 2, h1, h3);
+                    addBuilding(ix, iy + topH + gap / 2, iw, ih - topH - gap / 2, h2, h1);
+                } else if (layout === 2) {
+                    const halfW = (iw - gap) / 2;
+                    const halfH = (ih - gap) / 2;
+                    addBuilding(ix, iy, halfW, halfH, h1, h2);
+                    addBuilding(ix + halfW + gap, iy, halfW, halfH, h2, h3);
+                    addBuilding(ix, iy + halfH + gap, halfW, halfH, h3, h1);
+                    addBuilding(ix + halfW + gap, iy + halfH + gap, halfW, halfH, h2, h1);
+                } else if (layout === 3) {
+                    const leftW = iw * (0.48 + h2 * 0.10);
+                    const topH = ih * (0.43 + h3 * 0.12);
+                    addBuilding(ix, iy, leftW - gap / 2, ih, h3, h1);
+                    addBuilding(ix + leftW + gap / 2, iy, iw - leftW - gap / 2, topH - gap / 2, h2, h3);
+                    addBuilding(ix + leftW + gap / 2, iy + topH + gap / 2, iw - leftW - gap / 2, ih - topH - gap / 2, h1, h2);
+                } else {
+                    // 안뜰형 도심 블록: 네 건물 사이로 십자 골목이 연결됨
+                    const w = iw * 0.40, h = ih * 0.39;
+                    addBuilding(ix + iw * 0.025, iy + ih * 0.025, w, h, h1, h3);
+                    addBuilding(ix + iw * 0.575, iy + ih * 0.025, w, h, h2, h1);
+                    addBuilding(ix + iw * 0.025, iy + ih * 0.585, w, h, h3, h2);
+                    addBuilding(ix + iw * 0.575, iy + ih * 0.585, w, h, h1, h2);
+                }
+                }
+                // 상업가·미드타운 일부 블록에 지하철 계단 입구
+                if (['midtown', 'commercial'].includes(district) && hash2D(gx + 77, gy + 11) < 0.28) {
+                    props.push({ x: bx + BLOCK_SIZE / 2, y: by + 17, type: 'subway', radius: 14, broken: false });
+                }
+                if (district === 'station') props.push({ x: bx + BLOCK_SIZE / 2, y: by + 20, type: 'stationSign', broken: false });
+                if (district === 'industrial' && hash2D(gx - 21, gy + 9) < 0.5) {
+                    props.push({ x: bx + BLOCK_SIZE - 28, y: by + BLOCK_SIZE / 2, type: 'dumpster', broken: false });
+                }
+                // 블록 모서리 기물 (가로등, 소화전)
+                const corners = [
+                    { x: bx + 8, y: by + 8, type: 'hydrant' },
+                    { x: bx + BLOCK_SIZE - 8, y: by + 8, type: 'lamp' },
+                    { x: bx + 8, y: by + BLOCK_SIZE - 8, type: 'lamp' },
+                    { x: bx + BLOCK_SIZE - 8, y: by + BLOCK_SIZE - 8, type: 'hydrant' }
+                ];
+                corners.forEach(c => {
+                    props.push({ x: c.x, y: c.y, type: c.type, broken: false });
+                });
+            }
+
+            const chunk = { gx, gy, cellX, cellY, river, bridges, district, buildings, props };
+            chunkCache.set(key, chunk);
+            return chunk;
+        }
+
+        // 월드 좌표 (wx, wy)가 깊은 강물 위인지(다리가 없는 물 위인지) 판별
+        function isPointInDeepWater(wx, wy) {
+            const gx = Math.round(wx / CELL_SIZE);
+            const gy = Math.round(wy / CELL_SIZE);
+            const chunk = getChunk(gx, gy);
+            if (!chunk.river) return false;
+
+            const centerX = gx * CELL_SIZE;
+            const centerY = gy * CELL_SIZE;
+            const bridgeHalfWidth = ROAD_WIDTH * 0.48; // 다리 도로 폭
+
+            // 수평 다리 위라면 안전
+            if (chunk.bridges.horizontal && Math.abs(wy - centerY) <= bridgeHalfWidth) {
+                return false;
+            }
+            // 수직 다리 위라면 안전
+            if (chunk.bridges.vertical && Math.abs(wx - centerX) <= bridgeHalfWidth) {
+                return false;
+            }
+            return true;
+        }
+
+        // 월드 좌표 (wx, wy)가 건물 벽 내부인지 판별
+        function isPointInBuilding(wx, wy) {
+            const gx = Math.round(wx / CELL_SIZE);
+            const gy = Math.round(wy / CELL_SIZE);
+            const chunk = getChunk(gx, gy);
+            for (let i = 0; i < chunk.buildings.length; i++) {
+                const b = chunk.buildings[i];
+                if (wx >= b.x && wx <= b.x + b.w && wy >= b.y && wy <= b.y + b.h) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /**
+         * ============================================================================
+         * 3. 게임 상태 & 차량 스펙 (전체 속도를 한결 안정적이고 여유롭게 조정)
+         * ============================================================================
+         */
+        let gameState = 'MENU'; // MENU, PLAYING, WASTED
+        let lastTime = 0;
+        let globalTimer = 0;
+        let timeScale = 1.0;
+        let screenShake = 0;
+        let endReason = '경찰의 추격에 차량이 파괴되었습니다.';
+
+        // 통계 및 수배 변수
+        let cash = 0;
+        let survivalTime = 0;
+        let copsDestroyed = 0;
+        let civDamageCount = 0;
+
+        let wantedLevel = 1;       // ★1 시작 -> 최대 ★5까지 상승 (절대 줄어들지 않음)
+        let maxWantedReached = 1;
+        let wantedHeat = 0;        // 0 ~ 100 (100 도달 시 별 +1)
+
+        // 조종 감각이 안정적이도록 최고 속도와 가속도를 적절히 낮춘 스펙
+        const VEHICLE_SPECS = {
+            player: {
+                width: 24, length: 46, maxSpeed: 420, accel: 560, turnSpeed: 3.3,
+                maxHp: 130, mass: 1.25
+            },
+            civilian: {
+                width: 24, length: 45, maxSpeed: 210, accel: 360, turnSpeed: 2.8,
+                maxHp: 85, mass: 1.1
+            },
+            parkedCar: { width: 26, length: 48, maxSpeed: 300, accel: 430, turnSpeed: 3.0, maxHp: 105, mass: 1.25 },
+            parkedTruck: { width: 34, length: 66, maxSpeed: 285, accel: 350, turnSpeed: 2.25, maxHp: 210, mass: 2.1 },
+            police: {
+                width: 24, length: 46, maxSpeed: 385, accel: 510, turnSpeed: 3.2,
+                maxHp: 100, mass: 1.2
+            },
+            interceptor: {
+                width: 24, length: 47, maxSpeed: 430, accel: 570, turnSpeed: 3.4,
+                maxHp: 125, mass: 1.3
+            },
+            // ★2부터 등장: 각진 중장갑차, 표준 경찰차 최고속도의 85%
+            armored: {
+                width: 30, length: 54, maxSpeed: 327.25, accel: 430, turnSpeed: 2.7,
+                maxHp: 280, mass: 2.2
+            },
+            // ★3부터 등장하는 사격 전담 경찰차
+            shooter: {
+                width: 25, length: 48, maxSpeed: 375, accel: 500, turnSpeed: 3.1,
+                maxHp: 125, mass: 1.3
+            },
+            swat: {
+                width: 30, length: 56, maxSpeed: 375, accel: 480, turnSpeed: 2.6,
+                maxHp: 220, mass: 2.4
+            },
+            fib: {
+                width: 26, length: 50, maxSpeed: 445, accel: 590, turnSpeed: 3.3,
+                maxHp: 165, mass: 1.6
+            },
+            // ★6 한정 중무장 저거넛 추격차: 고내구도 차체와 전방 포탑
+            juggernaut: {
+                width: 34, length: 60, maxSpeed: 340, accel: 440, turnSpeed: 2.45,
+                maxHp: 360, mass: 2.8
+            }
+        };
+
+        const keys = { up: false, down: false, left: false, right: false, space: false, shift: false };
+        const mouse = { x: 0, y: 0, worldX: 0, worldY: 0, down: false, hasPointer: false };
+
+        let playerCar = null;
+        let playerOnFoot = false;
+        let playerPed = null;
+        let policeContactTime = 0;
+        let policeContactGap = 0;
+        let policeContactWarning = false;
+        let aiVehicles = [];
+        let peds = [];
+        let bullets = [];
+        let roadblocks = [];
+        let roadblockCooldown = 4;
+        let pickups = [];
+        let skidMarks = [];
+        let particles = [];
+        let floatingTexts = [];
+        let helicopter = null;
+        let shootCooldown = 0;
+
+        /**
+         * ============================================================================
+         * 4. 차량 클래스 (플레이어, 시민차, 경찰차)
+         * ============================================================================
+         */
+        class Vehicle {
+            constructor(x, y, role, options = {}) {
+                const spec = VEHICLE_SPECS[role] || VEHICLE_SPECS.civilian;
+                this.role = role; // player, civilian, parkedCar/parkedTruck, police and special units
+                this.vehicleStyle = role === 'parkedTruck' ? 'truck' : 'car';
+                this.isParked = role === 'parkedCar' || role === 'parkedTruck';
+                this.isPolice = ['police', 'interceptor', 'armored', 'shooter', 'swat', 'fib', 'juggernaut'].includes(role);
+
+                this.x = x;
+                this.y = y;
+                this.vx = 0;
+                this.vy = 0;
+                this.angle = options.angle !== undefined ? options.angle : -Math.PI / 2;
+
+                this.width = spec.width;
+                this.length = spec.length;
+                this.maxSpeed = spec.maxSpeed * (this.isPolice ? 1.6 : 1);
+                this.accel = spec.accel * (this.isPolice ? 1.6 : 1);
+                this.turnSpeed = spec.turnSpeed;
+                this.mass = spec.mass;
+                // 경찰이 운전하는 모든 차종은 기본 내구도의 1.5배
+                this.maxHp = spec.maxHp * (this.isPolice ? 1.5 : 1);
+                this.hp = this.maxHp;
+
+                const civColors = ['#94a3b8', '#facc15', '#3b82f6', '#10b981', '#a855f7', '#f97316'];
+                this.color = options.color || (
+                    role === 'player' ? '#ef4444' :
+                    role === 'fib' ? '#090d16' :
+                    role === 'juggernaut' ? '#292524' :
+                    role === 'swat' ? '#1e293b' :
+                    this.isPolice ? '#111827' :
+                    civColors[Math.floor(Math.random() * civColors.length)]
+                );
+
+                this.nitro = 100;
+                this.isNitroActive = false;
+                this.isDrifting = false;
+                this.destroyed = false;
+
+                this.sirenPhase = Math.random() * 10;
+                this.aiStuckTimer = 0;
+                this.aiReverseTimer = 0;
+                this.aiTurnCooldown = 0;
+                this.copShootTimer = 0.8 + Math.random() * 0.8;
+            }
+
+            update(dt) {
+                if (this.destroyed) return;
+
+                // 침수 체크 (다리 없는 깊은 강물에 빠졌을 때)
+                if (isPointInDeepWater(this.x, this.y)) {
+                    this.hp -= 160 * dt;
+                    this.vx *= 0.85;
+                    this.vy *= 0.85;
+                    if (Math.random() < 0.5) {
+                        particles.push({
+                            x: this.x + (Math.random() - 0.5) * 24,
+                            y: this.y + (Math.random() - 0.5) * 24,
+                            vx: (Math.random() - 0.5) * 40,
+                            vy: (Math.random() - 0.5) * 40,
+                            size: 8 + Math.random() * 8,
+                            alpha: 0.85,
+                            color: '#e0f2fe',
+                            life: 0.4,
+                            maxLife: 0.4
+                        });
+                    }
+                    if (this.hp <= 0) {
+                        this.destroy('water');
+                        return;
+                    }
+                } else if (this.hp <= 0) {
+                    this.destroy('explosion');
+                    return;
+                }
+
+                if (this.role === 'player') {
+                    if (!playerOnFoot) this.updatePlayer(dt);
+                    else this.isNitroActive = false;
+                } else if (this.isPolice) {
+                    this.updatePoliceAI(dt);
+                } else if (!this.isParked) {
+                    this.updateCivilianAI(dt);
+                }
+
+                // 물리 이동 및 타이어 마찰
+                const fx = Math.cos(this.angle);
+                const fy = Math.sin(this.angle);
+                const rx = -fy;
+                const ry = fx;
+
+                let forwardSpeed = this.vx * fx + this.vy * fy;
+                let lateralSpeed = this.vx * rx + this.vy * ry;
+
+                const grip = this.isDrifting ? 2.3 : 9.0;
+                lateralSpeed *= Math.max(0, 1 - grip * dt);
+                forwardSpeed *= Math.max(0, 1 - 0.65 * dt);
+
+                const effectiveMax = this.isNitroActive ? this.maxSpeed * 1.32 : this.maxSpeed;
+                if (forwardSpeed > effectiveMax) forwardSpeed = effectiveMax;
+                if (forwardSpeed < -this.maxSpeed * 0.42) forwardSpeed = -this.maxSpeed * 0.42;
+
+                this.vx = fx * forwardSpeed + rx * lateralSpeed;
+                this.vy = fy * forwardSpeed + ry * lateralSpeed;
+
+                this.x += this.vx * dt;
+                this.y += this.vy * dt;
+
+                // 스키드 마크 & 연기
+                const speed = Math.hypot(this.vx, this.vy);
+                if ((this.isDrifting && speed > 100) || Math.abs(lateralSpeed) > 85) {
+                    this.emitSkidMarks();
+                }
+
+                if (this.isNitroActive) {
+                    const ex = this.x - fx * (this.length * 0.52);
+                    const ey = this.y - fy * (this.length * 0.52);
+                    particles.push({
+                        x: ex, y: ey,
+                        vx: -fx * 120 + (Math.random() - 0.5) * 30,
+                        vy: -fy * 120 + (Math.random() - 0.5) * 30,
+                        size: 5 + Math.random() * 4,
+                        alpha: 0.9,
+                        color: Math.random() < 0.5 ? '#38bdf8' : '#fef08a',
+                        life: 0.18,
+                        maxLife: 0.18
+                    });
+                }
+
+                // 차량 파손 시 연기 및 불꽃
+                if (this.hp < this.maxHp * 0.45 && Math.random() < 0.3) {
+                    particles.push({
+                        x: this.x + fx * 12,
+                        y: this.y + fy * 12,
+                        vx: (Math.random() - 0.5) * 18,
+                        vy: -16 - Math.random() * 14,
+                        size: 5 + Math.random() * 5,
+                        alpha: 0.65,
+                        color: this.hp < this.maxHp * 0.22 ? '#f97316' : '#9ca3af',
+                        life: 0.45,
+                        maxLife: 0.45
+                    });
+                }
+            }
+
+            updatePlayer(dt) {
+                const fx = Math.cos(this.angle);
+                const fy = Math.sin(this.angle);
+                const forwardSpeed = this.vx * fx + this.vy * fy;
+
+                if (keys.shift && this.nitro > 4 && keys.up) {
+                    this.isNitroActive = true;
+                    this.nitro = Math.max(0, this.nitro - 34 * dt);
+                } else {
+                    this.isNitroActive = false;
+                    this.nitro = Math.min(100, this.nitro + 15 * dt);
+                }
+
+                const acc = this.isNitroActive ? this.accel * 1.5 : this.accel;
+                if (keys.up) {
+                    this.vx += fx * acc * dt;
+                    this.vy += fy * acc * dt;
+                }
+                if (keys.down) {
+                    const brakeAcc = forwardSpeed > 20 ? this.accel * 1.4 : this.accel * 0.72;
+                    this.vx -= fx * brakeAcc * dt;
+                    this.vy -= fy * brakeAcc * dt;
+                }
+
+                this.isDrifting = keys.space && Math.abs(forwardSpeed) > 75;
+
+                const speedFactor = Math.min(1, Math.abs(forwardSpeed) / 95);
+                const revSign = forwardSpeed >= -5 ? 1 : -1;
+                const driftBonus = this.isDrifting ? 1.28 : 1.0;
+
+                if (keys.left) this.angle -= this.turnSpeed * speedFactor * revSign * driftBonus * dt;
+                if (keys.right) this.angle += this.turnSpeed * speedFactor * revSign * driftBonus * dt;
+            }
+
+            updatePoliceAI(dt) {
+                if ((!playerCar || playerCar.destroyed) && !playerOnFoot) return;
+
+                const chaseTarget = getActivePlayerPosition();
+                const dx = chaseTarget.x - this.x;
+                const dy = chaseTarget.y - this.y;
+                const dist = Math.hypot(dx, dy);
+
+                // 건물 & 강물 회피 센서 (경찰차도 다리를 통해 강을 건너도록 유도)
+                const sensorDist = 90;
+                const leftAngle = this.angle - 0.48;
+                const rightAngle = this.angle + 0.48;
+                const lx = this.x + Math.cos(leftAngle) * sensorDist;
+                const ly = this.y + Math.sin(leftAngle) * sensorDist;
+                const rx = this.x + Math.cos(rightAngle) * sensorDist;
+                const ry = this.y + Math.sin(rightAngle) * sensorDist;
+
+                const leftBlocked = isPointInBuilding(lx, ly) || isPointInDeepWater(lx, ly);
+                const rightBlocked = isPointInBuilding(rx, ry) || isPointInDeepWater(rx, ry);
+
+                let avoid = 0;
+                if (leftBlocked && !rightBlocked) avoid = 0.95;
+                else if (rightBlocked && !leftBlocked) avoid = -0.95;
+                else if (leftBlocked && rightBlocked) avoid = 1.45;
+
+                const speed = Math.hypot(this.vx, this.vy);
+                if (speed < 30) {
+                    this.aiStuckTimer += dt;
+                    if (this.aiStuckTimer > 1.0) {
+                        this.aiReverseTimer = 0.65;
+                        this.aiStuckTimer = 0;
+                    }
+                } else {
+                    this.aiStuckTimer = Math.max(0, this.aiStuckTimer - dt);
+                }
+
+                const fx = Math.cos(this.angle);
+                const fy = Math.sin(this.angle);
+
+                if (this.aiReverseTimer > 0) {
+                    this.aiReverseTimer -= dt;
+                    this.vx -= fx * this.accel * 0.65 * dt;
+                    this.vy -= fy * this.accel * 0.65 * dt;
+                    this.angle += 2.2 * dt;
+                    return;
+                }
+
+                // 사격 전담 경찰차만 플레이어를 향해 사격
+                if (this.role === 'shooter' && wantedLevel >= 3 && dist < 390) {
+                    this.copShootTimer -= dt;
+                    if (this.copShootTimer <= 0) {
+                        this.copShootTimer = Math.max(0.85, 1.85 - wantedLevel * 0.16);
+                        const aim = Math.atan2(dy, dx) + (Math.random() - 0.5) * 0.25;
+                        fireBullet(this.x, this.y, aim, 590, 5, 'cop', '#38bdf8');
+                    }
+                }
+                // ★6 저거넛은 더 긴 사거리의 고화력 포탄으로 압박
+                if (this.role === 'juggernaut' && wantedLevel >= 6 && dist < 560) {
+                    this.copShootTimer -= dt;
+                    if (this.copShootTimer <= 0) {
+                        this.copShootTimer = 1.65;
+                        const aim = Math.atan2(dy, dx) + (Math.random() - 0.5) * 0.12;
+                        fireBullet(this.x, this.y, aim, 760, 11, 'cop', '#fb923c');
+                    }
+                }
+
+                // 목표 방향 계산 (다리를 찾아 건너거나 플레이어를 직접 추격)
+                let targetAngle = Math.atan2(dy, dx);
+                if (isPointInDeepWater(this.x + Math.cos(targetAngle) * 110, this.y + Math.sin(targetAngle) * 110)) {
+                    const gx = Math.round(this.x / CELL_SIZE);
+                    const gy = Math.round(this.y / CELL_SIZE);
+                    targetAngle = Math.atan2(gy * CELL_SIZE - this.y, gx * CELL_SIZE - this.x);
+                }
+
+                const diff = normalizeAngle(targetAngle + avoid - this.angle);
+                const turnRate = this.turnSpeed * Math.min(1, speed / 75);
+                this.angle += Math.max(-turnRate * dt, Math.min(turnRate * dt, diff));
+
+                // 너무 가까우면 살짝 속도를 조절해 연쇄 추돌/포위 유도
+                const desiredSpeed = dist < 130 ? this.maxSpeed * 0.72 : this.maxSpeed * 0.92;
+                const currentForward = this.vx * fx + this.vy * fy;
+                if (currentForward < desiredSpeed) {
+                    this.vx += fx * this.accel * 0.85 * dt;
+                    this.vy += fy * this.accel * 0.85 * dt;
+                }
+            }
+
+            updateCivilianAI(dt) {
+                // 주변에 경찰차나 플레이어가 가까이 지나가면 당황하며 도로를 따라 주행
+                const fx = Math.cos(this.angle);
+                const fy = Math.sin(this.angle);
+                const lookAheadX = this.x + fx * 85;
+                const lookAheadY = this.y + fy * 85;
+
+                const blocked = isPointInBuilding(lookAheadX, lookAheadY) || isPointInDeepWater(lookAheadX, lookAheadY);
+                this.aiTurnCooldown = Math.max(0, this.aiTurnCooldown - dt);
+
+                if (blocked && this.aiTurnCooldown <= 0) {
+                    // 90도 단위로 방향 전환하여 교차로와 도로를 따라 이동
+                    const turnDir = Math.random() < 0.5 ? Math.PI / 2 : -Math.PI / 2;
+                    this.angle = normalizeAngle(this.angle + turnDir);
+                    this.aiTurnCooldown = 0.55;
+                }
+
+                const targetSpeed = this.maxSpeed * 0.75;
+                const currentForward = this.vx * fx + this.vy * fy;
+                if (currentForward < targetSpeed) {
+                    this.vx += Math.cos(this.angle) * this.accel * 0.55 * dt;
+                    this.vy += Math.sin(this.angle) * this.accel * 0.55 * dt;
+                }
+            }
+
+            emitSkidMarks() {
+                const fx = Math.cos(this.angle);
+                const fy = Math.sin(this.angle);
+                const rx = -fy;
+                const ry = fx;
+                const rearX = this.x - fx * (this.length * 0.3);
+                const rearY = this.y - fy * (this.length * 0.3);
+
+                [-1, 1].forEach(side => {
+                    skidMarks.push({
+                        x: rearX + rx * (this.width * 0.42 * side),
+                        y: rearY + ry * (this.width * 0.42 * side),
+                        angle: this.angle,
+                        alpha: 0.38,
+                        isCrater: false
+                    });
+                });
+
+                if (skidMarks.length > 420) {
+                    skidMarks.splice(0, skidMarks.length - 420);
+                }
+            }
+
+            destroy(cause = 'explosion') {
+                if (this.destroyed) return;
+                this.destroyed = true;
+                this.hp = 0;
+
+                if (cause !== 'water') {
+                    createExplosion(this.x, this.y, 125, 110);
+                } else {
+                    sound.playSplash();
+                    screenShake = 10;
+                    for (let i = 0; i < 22; i++) {
+                        const ang = Math.random() * Math.PI * 2;
+                        const spd = 40 + Math.random() * 140;
+                        particles.push({
+                            x: this.x, y: this.y,
+                            vx: Math.cos(ang) * spd,
+                            vy: Math.sin(ang) * spd,
+                            size: 6 + Math.random() * 7,
+                            alpha: 0.9,
+                            color: '#bae6fd',
+                            life: 0.45,
+                            maxLife: 0.45
+                        });
+                    }
+                }
+
+                if (this.role === 'player') {
+                    if (!playerOnFoot) {
+                        endReason = cause === 'water'
+                            ? '다리 밖 깊은 강물에 빠져 차량이 침수되었습니다!'
+                            : '경찰의 집중 추격으로 차량이 폭발했습니다!';
+                        triggerWasted();
+                    }
+                } else if (this.isPolice) {
+                    // 경찰차 파괴 시 수배 게이지 완만 상승
+                    copsDestroyed++;
+                    const reward = 250 + wantedLevel * 50;
+                    cash += reward;
+                    addWantedHeat(7.5);
+                    addFloatingText(this.x, this.y - 18, `경찰차 파괴! +$${reward}`, '#38bdf8');
+                } else {
+                    // 시민 차량 파괴 시 수배 게이지 완만 상승
+                    civDamageCount++;
+                    cash += 80;
+                    addWantedHeat(4.5);
+                    addFloatingText(this.x, this.y - 18, '차량 파손! +$80', '#facc15');
+                }
+            }
+
+            draw(ctx) {
+                if (this.destroyed) return;
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.angle);
+
+                const w = this.length;
+                const h = this.width;
+
+                // 그림자
+                ctx.fillStyle = 'rgba(0,0,0,0.42)';
+                roundRect(ctx, -w / 2 + 4, -h / 2 + 5, w, h, 6);
+                ctx.fill();
+
+                // 타이어
+                ctx.fillStyle = '#111827';
+                ctx.fillRect(w * 0.22 - 5, -h / 2 - 2, 10, 4);
+                ctx.fillRect(w * 0.22 - 5, h / 2 - 2, 10, 4);
+                ctx.fillRect(-w * 0.28 - 5, -h / 2 - 2, 10, 4);
+                ctx.fillRect(-w * 0.28 - 5, h / 2 - 2, 10, 4);
+
+                // 차체
+                ctx.fillStyle = this.color;
+                roundRect(ctx, -w / 2, -h / 2, w, h, ['swat', 'armored', 'juggernaut'].includes(this.role) ? 2 : 7);
+                ctx.fill();
+
+                // 차종별 외관 디테일
+                if (this.vehicleStyle === 'truck') {
+                    ctx.fillStyle = '#facc15'; ctx.fillRect(-w * 0.18, -h / 2 + 1, w * 0.2, h - 2);
+                    ctx.fillStyle = '#0f172a'; ctx.fillRect(w * 0.12, -h * 0.34, w * 0.23, h * 0.68);
+                    ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 2; ctx.strokeRect(-w / 2 + 2, -h / 2 + 2, w - 4, h - 4);
+                } else if (this.role === 'player') {
+                    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+                    ctx.fillRect(-w / 2 + 3, -3, w - 6, 2);
+                    ctx.fillRect(-w / 2 + 3, 1, w - 6, 2);
+                } else if (this.role === 'police' || this.role === 'interceptor') {
+                    ctx.fillStyle = '#f8fafc';
+                    ctx.fillRect(-w * 0.16, -h / 2 + 1, w * 0.34, h - 2);
+                } else if (this.role === 'shooter') {
+                    // 흰색 차체 띠와 지붕 위 기관총으로 일반 순찰차와 구별
+                    ctx.fillStyle = '#e0f2fe';
+                    ctx.fillRect(-w * 0.18, -h / 2 + 1, w * 0.38, h - 2);
+                    ctx.fillStyle = '#f97316';
+                    ctx.fillRect(-w * 0.1, -h / 2 + 1, 3, h - 2);
+                    ctx.fillStyle = '#cbd5e1';
+                    ctx.fillRect(-w * 0.02, -2, 15, 4);
+                    ctx.fillStyle = '#475569';
+                    ctx.beginPath();
+                    ctx.arc(-w * 0.02, 0, 5, 0, Math.PI * 2);
+                    ctx.fill();
+                } else if (this.role === 'armored') {
+                    // 각진 장갑 패널과 굵은 범퍼
+                    ctx.strokeStyle = '#94a3b8';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(-w / 2 + 2, -h / 2 + 2, w - 4, h - 4);
+                    ctx.fillStyle = '#facc15';
+                    ctx.fillRect(-w / 2 + 3, -2, w - 6, 4);
+                    ctx.fillStyle = '#64748b';
+                    ctx.fillRect(w / 2 - 2, -h / 2 + 2, 4, h - 4);
+                } else if (this.role === 'swat' || this.role === 'fib') {
+                    ctx.strokeStyle = '#64748b';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(-w / 2 + 2, -h / 2 + 2, w - 4, h - 4);
+                } else if (this.role === 'juggernaut') {
+                    // 주황색 장갑 패널, 굵은 범퍼와 회전 포탑으로 특수 유닛을 식별
+                    ctx.strokeStyle = '#78716c'; ctx.lineWidth = 3;
+                    ctx.strokeRect(-w / 2 + 3, -h / 2 + 3, w - 6, h - 6);
+                    ctx.fillStyle = '#f97316';
+                    ctx.fillRect(-w / 2 + 4, -h * 0.34, w - 8, 4);
+                    ctx.fillRect(-w / 2 + 4, h * 0.30, w - 8, 4);
+                    ctx.fillStyle = '#a8a29e'; ctx.fillRect(-w * 0.12, -3, w * 0.5, 6);
+                    ctx.fillStyle = '#44403c'; ctx.beginPath(); ctx.arc(-w * 0.12, 0, 7, 0, Math.PI * 2); ctx.fill();
+                }
+
+                // 유리창
+                ctx.fillStyle = '#0f172a';
+                roundRect(ctx, w * 0.06, -h * 0.36, w * 0.22, h * 0.72, 2);
+                ctx.fill();
+                if (this.role !== 'swat') {
+                    roundRect(ctx, -w * 0.34, -h * 0.34, w * 0.15, h * 0.68, 2);
+                    ctx.fill();
+                }
+
+                // 헤드라이트
+                ctx.fillStyle = '#fef9c3';
+                ctx.fillRect(w / 2 - 3, -h * 0.35, 3, 5);
+                ctx.fillRect(w / 2 - 3, h * 0.35 - 5, 3, 5);
+
+                // 경찰 경광등 점멸
+                if (this.isPolice) {
+                    const flash = Math.sin((globalTimer + this.sirenPhase) * 18) > 0;
+                    const c1 = flash ? '#ef4444' : '#3b82f6';
+                    const c2 = flash ? '#3b82f6' : '#ef4444';
+
+                    ctx.fillStyle = c1;
+                    ctx.shadowColor = c1;
+                    ctx.shadowBlur = 14;
+                    ctx.fillRect(-3, -h * 0.32, 5, h * 0.3);
+
+                    ctx.fillStyle = c2;
+                    ctx.shadowColor = c2;
+                    ctx.shadowBlur = 14;
+                    ctx.fillRect(-3, 2, 5, h * 0.3);
+                    ctx.shadowBlur = 0;
+                }
+
+                ctx.restore();
+            }
+        }
+
+        /**
+         * ============================================================================
+         * 5. 수배 등급 상승 시스템 (시간 경과 + 파괴/시민 피해 행동)
+         * ============================================================================
+         */
+        function getActivePlayerPosition() { return playerOnFoot && playerPed ? playerPed : playerCar; }
+        function togglePlayerVehicle() {
+            if (gameState !== 'PLAYING') return;
+            if (!playerOnFoot && (!playerCar || playerCar.destroyed)) return;
+            if (!playerOnFoot) {
+                const side = playerCar.angle + Math.PI / 2;
+                let x = playerCar.x + Math.cos(side) * 42, y = playerCar.y + Math.sin(side) * 42;
+                if (isPointInBuilding(x, y) || isPointInDeepWater(x, y)) {
+                    x = playerCar.x - Math.cos(playerCar.angle) * 48;
+                    y = playerCar.y - Math.sin(playerCar.angle) * 48;
+                }
+                if (isPointInBuilding(x, y) || isPointInDeepWater(x, y)) { showToast('내릴 공간이 없습니다!', 'bg-amber-600'); return; }
+                playerPed = { x, y, angle: playerCar.angle, color: '#38bdf8' };
+                playerCar.vx = playerCar.vy = 0; playerCar.isNitroActive = false; playerCar.isParked = true;
+                policeContactTime = 0;
+                playerOnFoot = true;
+                document.getElementById('btnEnterExit').textContent = '차량 약탈';
+                showToast('차량을 두고 내렸습니다 · 길가 차량/트럭에서 E를 눌러 탑승', 'bg-sky-600');
+                return;
+            }
+            const candidates = [playerCar, ...aiVehicles].filter(v => v && !v.destroyed && v.isParked);
+            let nearest = null, nearestDist = 92;
+            for (const vehicle of candidates) {
+                const d = Math.hypot(playerPed.x - vehicle.x, playerPed.y - vehicle.y);
+                if (d < nearestDist) { nearest = vehicle; nearestDist = d; }
+            }
+            if (!nearest) { showToast('차량 가까이 다가가야 탈 수 있습니다.', 'bg-amber-600'); return; }
+            const abandoned = playerCar;
+            if (nearest !== abandoned) {
+                if (abandoned && !abandoned.destroyed) {
+                    abandoned.role = abandoned.vehicleStyle === 'truck' ? 'parkedTruck' : 'parkedCar';
+                    abandoned.isPolice = false; abandoned.isParked = true; abandoned.isNitroActive = false;
+                    aiVehicles.push(abandoned);
+                }
+                aiVehicles = aiVehicles.filter(v => v !== nearest);
+                nearest.role = 'player'; nearest.isPolice = false; nearest.isParked = false;
+                nearest.nitro = Math.max(nearest.nitro || 0, 50); playerCar = nearest;
+            } else nearest.isParked = false;
+            playerOnFoot = false; playerPed = null;
+            policeContactTime = 0;
+            policeContactGap = 0;
+            policeContactWarning = false;
+            document.getElementById('btnEnterExit').textContent = '내리기';
+            showToast(nearest.vehicleStyle === 'truck' ? '트럭을 탈취했습니다!' : '차량을 탈취했습니다!', 'bg-emerald-600');
+        }
+        function updatePlayerOnFoot(dt) {
+            if (!playerPed) return;
+            let dx = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
+            let dy = (keys.down ? 1 : 0) - (keys.up ? 1 : 0);
+            const len = Math.hypot(dx, dy);
+            if (!len) return;
+            dx /= len; dy /= len; playerPed.angle = Math.atan2(dy, dx);
+            const step = 190 * dt, nx = playerPed.x + dx * step, ny = playerPed.y + dy * step;
+            if (!isPointInBuilding(nx, playerPed.y) && !isPointInDeepWater(nx, playerPed.y)) playerPed.x = nx;
+            if (!isPointInBuilding(playerPed.x, ny) && !isPointInDeepWater(playerPed.x, ny)) playerPed.y = ny;
+        }
+
+        function addWantedHeat(amount) {
+            if (wantedLevel >= 6) {
+                wantedHeat = 100;
+                return;
+            }
+            wantedHeat += amount;
+            if (wantedHeat >= 100) {
+                wantedLevel++;
+                maxWantedReached = Math.max(maxWantedReached, wantedLevel);
+                wantedHeat = wantedLevel === 6 ? 100 : (wantedHeat - 100);
+                sound.playStarUp();
+                updateWantedStarsUI();
+
+                const titles = {
+                    2: '🚨 수배 ★2! 경찰 증원 배치!',
+                    3: '🚨 수배 ★3! 고속 요격차 & 사격 허가!',
+                    4: '🚨 수배 ★4! SWAT 장갑차 & 추격 헬기 출동!',
+                    5: '🔥 수배 ★5! FIB 특수부대 총동원!',
+                    6: '🔥 최고 수배 ★6! 최대 규모의 경찰 추격!'
+                };
+                showToast(titles[wantedLevel] || `🚨 수배 ★${wantedLevel}!`, 'bg-rose-600');
+            }
+        }
+
+        function updateWantedStarsUI() {
+            const container = document.getElementById('wantedStars');
+            container.innerHTML = '';
+            for (let i = 1; i <= 6; i++) {
+                const s = document.createElement('span');
+                s.textContent = '★';
+                s.className = i <= wantedLevel ? 'star-active' : 'star-off';
+                container.appendChild(s);
+            }
+            document.getElementById('wantedRankLabel').textContent =
+                wantedLevel === 6 ? '최고 수배 (MAX)' : `수배 ${wantedLevel}단계`;
+        }
+
+        /**
+         * ============================================================================
+         * 6. 엔티티 스폰, 총격, 보행자, 헬기, 충돌 처리
+         * ============================================================================
+         */
+        function spawnParkedVehicleAroundPlayer() {
+            if (!playerCar) return;
+            for (let attempt = 0; attempt < 24; attempt++) {
+                const a = Math.random() * Math.PI * 2, d = 500 + Math.random() * 1300;
+                let x = playerCar.x + Math.cos(a) * d, y = playerCar.y + Math.sin(a) * d;
+                const vertical = Math.random() < 0.5;
+                if (vertical) x = Math.round(x / CELL_SIZE) * CELL_SIZE + (Math.random() < 0.5 ? -1 : 1) * (BLOCK_SIZE / 2 + ROAD_WIDTH * 0.33);
+                else y = Math.round(y / CELL_SIZE) * CELL_SIZE + (Math.random() < 0.5 ? -1 : 1) * (BLOCK_SIZE / 2 + ROAD_WIDTH * 0.33);
+                if (isPointInBuilding(x, y) || isPointInDeepWater(x, y)) continue;
+                if (aiVehicles.some(v => Math.hypot(v.x - x, v.y - y) < 90) || Math.hypot(playerCar.x - x, playerCar.y - y) < 120) continue;
+                const role = Math.random() < 0.24 ? 'parkedTruck' : 'parkedCar';
+                const car = new Vehicle(x, y, role, { angle: vertical ? Math.PI / 2 : 0 });
+                car.isParked = true; aiVehicles.push(car); return;
+            }
+        }
+
+        function spawnAroundPlayer(role) {
+            if (!playerCar) return;
+            const dist = 850 + Math.random() * 350;
+            const ang = Math.random() * Math.PI * 2;
+            const sx = playerCar.x + Math.cos(ang) * dist;
+            const sy = playerCar.y + Math.sin(ang) * dist;
+
+            if (isPointInBuilding(sx, sy) || isPointInDeepWater(sx, sy)) return;
+
+            const toPlayer = Math.atan2(playerCar.y - sy, playerCar.x - sx);
+            const angle = role === 'civilian'
+                ? [0, Math.PI / 2, Math.PI, -Math.PI / 2][Math.floor(Math.random() * 4)]
+                : toPlayer;
+
+            aiVehicles.push(new Vehicle(sx, sy, role, { angle }));
+        }
+
+        function spawnPedAroundPlayer() {
+            if (!playerCar) return;
+            const dist = 550 + Math.random() * 500;
+            const ang = Math.random() * Math.PI * 2;
+            const px = playerCar.x + Math.cos(ang) * dist;
+            const py = playerCar.y + Math.sin(ang) * dist;
+
+            if (isPointInBuilding(px, py) || isPointInDeepWater(px, py)) return;
+
+            const shirtColors = ['#f43f5e', '#3b82f6', '#10b981', '#f59e0b', '#a855f7', '#e2e8f0'];
+            peds.push({
+                x: px, y: py,
+                angle: Math.random() * Math.PI * 2,
+                color: shirtColors[Math.floor(Math.random() * shirtColors.length)],
+                panic: false,
+                timer: Math.random() * 2.5
+            });
+        }
+
+        function fireBullet(x, y, angle, speed, damage, owner, color = '#fef08a') {
+            bullets.push({
+                x: x + Math.cos(angle) * 20,
+                y: y + Math.sin(angle) * 20,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                angle,
+                damage,
+                owner,
+                color,
+                life: 0.75
+            });
+        }
+
+        function createExplosion(x, y, radius, maxDamage) {
+            sound.playExplosion();
+            screenShake = 16;
+
+            for (let i = 0; i < 30; i++) {
+                const ang = Math.random() * Math.PI * 2;
+                const spd = 35 + Math.random() * 220;
+                const cols = ['#ef4444', '#f97316', '#facc15', '#1f2937'];
+                particles.push({
+                    x, y,
+                    vx: Math.cos(ang) * spd,
+                    vy: Math.sin(ang) * spd,
+                    size: 8 + Math.random() * 13,
+                    alpha: 1,
+                    color: cols[Math.floor(Math.random() * cols.length)],
+                    life: 0.4 + Math.random() * 0.35,
+                    maxLife: 0.75
+                });
+            }
+
+            skidMarks.push({ x, y, angle: Math.random() * Math.PI, alpha: 0.7, isCrater: true });
+
+            aiVehicles.forEach(v => {
+                if (v.destroyed) return;
+                const d = Math.hypot(v.x - x, v.y - y);
+                if (d < radius) v.hp -= maxDamage * (1 - d / radius);
+            });
+
+            if (playerCar && !playerCar.destroyed) {
+                const d = Math.hypot(playerCar.x - x, playerCar.y - y);
+                if (d < radius) playerCar.hp -= maxDamage * 0.45 * (1 - d / radius);
+            }
+        }
+
+        function spawnSparks(x, y, count) {
+            for (let i = 0; i < count; i++) {
+                const ang = Math.random() * Math.PI * 2;
+                const spd = 60 + Math.random() * 150;
+                particles.push({
+                    x, y,
+                    vx: Math.cos(ang) * spd,
+                    vy: Math.sin(ang) * spd,
+                    size: 2.5, alpha: 1, color: '#fde047',
+                    life: 0.2, maxLife: 0.2
+                });
+            }
+        }
+
+        function addFloatingText(x, y, text, color = '#facc15') {
+            floatingTexts.push({ x, y, text, color, life: 1.15, maxLife: 1.15 });
+        }
+
+        function showToast(msg, bgClass = 'bg-amber-600') {
+            const box = document.getElementById('toastContainer');
+            const el = document.createElement('div');
+            el.className = `${bgClass} text-white font-black text-xs sm:text-sm px-4 py-1.5 rounded-full shadow-xl border border-white/30`;
+            el.textContent = msg;
+            box.appendChild(el);
+            setTimeout(() => el.remove(), 2600);
+        }
+
+        function placeRoadblockAhead() {
+            if (!playerCar || playerOnFoot || playerCar.destroyed) return false;
+            const speed = Math.hypot(playerCar.vx, playerCar.vy);
+            const dir = speed > 65 ? Math.atan2(playerCar.vy, playerCar.vx) : playerCar.angle;
+            const perp = dir + Math.PI / 2;
+            const lead = Math.max(320, Math.min(620, 300 + speed * 0.75));
+            const candidates = [lead, lead + 130, lead - 110, lead + 240];
+            for (const distance of candidates) {
+                for (const side of [0, -42, 42]) {
+                    const x = playerCar.x + Math.cos(dir) * distance + Math.cos(perp) * side;
+                    const y = playerCar.y + Math.sin(dir) * distance + Math.sin(perp) * side;
+                    const half = 78;
+                    const endX = Math.cos(perp) * half, endY = Math.sin(perp) * half;
+                    if (isPointInBuilding(x, y) || isPointInDeepWater(x, y) ||
+                        isPointInBuilding(x + endX, y + endY) || isPointInBuilding(x - endX, y - endY) ||
+                        isPointInDeepWater(x + endX, y + endY) || isPointInDeepWater(x - endX, y - endY)) continue;
+                    if (roadblocks.some(rb => Math.hypot(rb.x - x, rb.y - y) < 180)) continue;
+                    roadblocks.push({ x, y, angle: perp, length: 156, width: 24, hp: 260, life: 26 });
+                    showToast('🚧 경찰이 도주 경로에 바리케이드를 설치했습니다!', 'bg-amber-600');
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function resolveAllCollisions() {
+            const allCars = playerCar ? [playerCar, ...aiVehicles] : [...aiVehicles];
+
+            for (let i = 0; i < allCars.length; i++) {
+                const a = allCars[i];
+                if (a.destroyed) continue;
+
+                // 주변 청크 건물 및 기물 충돌
+                const gx = Math.round(a.x / CELL_SIZE);
+                const gy = Math.round(a.y / CELL_SIZE);
+                const radA = a.width * 0.58;
+
+                for (let dxG = -1; dxG <= 1; dxG++) {
+                    for (let dyG = -1; dyG <= 1; dyG++) {
+                        const chunk = getChunk(gx + dxG, gy + dyG);
+
+                        // 건물 벽 충돌
+                        for (let bIdx = 0; bIdx < chunk.buildings.length; bIdx++) {
+                            const b = chunk.buildings[bIdx];
+                            const cx = Math.max(b.x, Math.min(a.x, b.x + b.w));
+                            const cy = Math.max(b.y, Math.min(a.y, b.y + b.h));
+                            const dx = a.x - cx;
+                            const dy = a.y - cy;
+                            const dSq = dx * dx + dy * dy;
+
+                            if (dSq < radA * radA) {
+                                const d = Math.sqrt(dSq) || 0.01;
+                                const nx = dx / d, ny = dy / d;
+                                a.x += nx * (radA - d);
+                                a.y += ny * (radA - d);
+                                const rel = a.vx * nx + a.vy * ny;
+                                if (rel < 0) {
+                                    a.vx -= 1.25 * rel * nx;
+                                    a.vy -= 1.25 * rel * ny;
+                                    if (Math.abs(rel) > 140) {
+                                        a.hp -= (Math.abs(rel) - 140) * 0.032;
+                                        if (a.role === 'player') {
+                                            sound.playCrash(Math.abs(rel) / 260);
+                                            screenShake = 8;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // 가로등/소화전 기물 충돌
+                        for (let pIdx = 0; pIdx < chunk.props.length; pIdx++) {
+                            const pr = chunk.props[pIdx];
+                            if (!pr.broken && Math.hypot(a.x - pr.x, a.y - pr.y) < radA + (pr.radius || 7)) {
+                                pr.broken = true;
+                                spawnSparks(pr.x, pr.y, 6);
+                                if (a.role === 'player') {
+                                    civDamageCount++;
+                                    cash += 25;
+                                    addWantedHeat(1.5);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 차량과 경찰 바리케이드 충돌 (차량을 밀어내고 바리케이드도 파손 가능)
+                for (const rb of roadblocks) {
+                    const c = Math.cos(rb.angle), sn = Math.sin(rb.angle);
+                    const dx = a.x - rb.x, dy = a.y - rb.y;
+                    const lx = dx * c + dy * sn, ly = -dx * sn + dy * c;
+                    const qx = Math.max(-rb.length / 2, Math.min(lx, rb.length / 2));
+                    const qy = Math.max(-rb.width / 2, Math.min(ly, rb.width / 2));
+                    const ex = lx - qx, ey = ly - qy, dist = Math.hypot(ex, ey);
+                    const carRadius = a.width * 0.58;
+                    if (dist < carRadius) {
+                        const localNX = dist > 0.01 ? ex / dist : 0;
+                        const localNY = dist > 0.01 ? ey / dist : (Math.abs(lx) > rb.length / 2 ? Math.sign(lx) : Math.sign(ly || 1));
+                        const nx = localNX * c - localNY * sn;
+                        const ny = localNX * sn + localNY * c;
+                        const push = carRadius - dist;
+                        a.x += nx * push; a.y += ny * push;
+                        const impact = a.vx * nx + a.vy * ny;
+                        if (impact < 0) {
+                            a.vx -= 1.35 * impact * nx; a.vy -= 1.35 * impact * ny;
+                            rb.hp -= Math.abs(impact) * 0.12;
+                            if (a.role === 'player' && Math.abs(impact) > 100) {
+                                a.hp -= Math.abs(impact) * 0.018;
+                                screenShake = Math.min(10, Math.abs(impact) * 0.02);
+                                sound.playCrash(Math.abs(impact) / 300);
+                            }
+                        }
+                    }
+                }
+
+                // 차량 간 충돌
+                for (let j = i + 1; j < allCars.length; j++) {
+                    const b = allCars[j];
+                    if (b.destroyed) continue;
+
+                    const dx = b.x - a.x;
+                    const dy = b.y - a.y;
+                    const dist = Math.hypot(dx, dy);
+                    const minDist = (a.width + b.width) * 0.62;
+
+                    if (dist < minDist && dist > 0.001) {
+                        const overlap = minDist - dist;
+                        const nx = dx / dist, ny = dy / dist;
+                        const totalM = a.mass + b.mass;
+
+                        a.x -= nx * overlap * (b.mass / totalM);
+                        a.y -= ny * overlap * (b.mass / totalM);
+                        b.x += nx * overlap * (a.mass / totalM);
+                        b.y += ny * overlap * (a.mass / totalM);
+
+                        const rvx = b.vx - a.vx;
+                        const rvy = b.vy - a.vy;
+                        const velNormal = rvx * nx + rvy * ny;
+
+                        if (velNormal < 0) {
+                            const imp = -(1.55) * velNormal / (1 / a.mass + 1 / b.mass);
+                            a.vx -= (imp / a.mass) * nx;
+                            a.vy -= (imp / a.mass) * ny;
+                            b.vx += (imp / b.mass) * nx;
+                            b.vy += (imp / b.mass) * ny;
+
+                            const impact = Math.abs(velNormal);
+                            if (impact > 80) {
+                                spawnSparks((a.x + b.x) / 2, (a.y + b.y) / 2, 6);
+
+                                if (a.role === 'player' || b.role === 'player') {
+                                    sound.playCrash(impact / 210);
+                                    screenShake = Math.min(14, impact * 0.028);
+
+                                    const pCar = a.role === 'player' ? a : b;
+                                    const other = a.role === 'player' ? b : a;
+
+                                    // 중장갑 경찰차는 무게가 실린 충돌로 플레이어 차량에 큰 피해를 줌
+                                    const basePlayerDamage = pCar.isNitroActive ? 0.012 : 0.032;
+                                    const impactMultiplier = other.role === 'armored' ? 2.5 : 1;
+                                    pCar.hp -= basePlayerDamage * impactMultiplier * impact * (other.mass / pCar.mass);
+                                    other.hp -= (pCar.isNitroActive ? 0.24 : 0.12) * impact;
+
+                                    // 경찰차나 시민차를 들이받을 때마다 수배 게이지 완만 상승
+                                    if (other.isPolice) {
+                                        addWantedHeat(2.2);
+                                    } else {
+                                        addWantedHeat(1.5);
+                                    }
+                                } else {
+                                    a.hp -= impact * 0.14;
+                                    b.hp -= impact * 0.14;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        function updateHUD() {
+            const mins = Math.floor(survivalTime / 60).toString().padStart(2, '0');
+            const secs = Math.floor(survivalTime % 60).toString().padStart(2, '0');
+            document.getElementById('timerDisplay').textContent = `${mins}:${secs}`;
+
+            const cashStr = '$' + Math.floor(cash).toString().padStart(8, '0');
+            document.getElementById('cashDisplay').textContent = cashStr;
+
+            if (playerCar) {
+                const hpPct = Math.max(0, Math.round((playerCar.hp / playerCar.maxHp) * 100));
+                document.getElementById('carHpText').textContent = hpPct + '%';
+                document.getElementById('carHpBar').style.width = hpPct + '%';
+
+                const spd = playerOnFoot ? 0 : Math.hypot(playerCar.vx, playerCar.vy);
+                document.getElementById('speedDisplay').textContent = Math.round((spd / playerCar.maxSpeed) * 200);
+                document.getElementById('nitroBar').style.width = Math.round(playerCar.nitro) + '%';
+            }
+
+            const heatPct = Math.min(100, Math.round(wantedHeat));
+            document.getElementById('wantedHeatText').textContent = wantedLevel === 6 ? 'MAX' : `${heatPct}%`;
+            document.getElementById('wantedHeatBar').style.width = `${heatPct}%`;
+        }
+
+        function triggerWasted() {
+            if (gameState === 'WASTED') return;
+            gameState = 'WASTED';
+            timeScale = 0.28;
+            canvas.classList.add('wasted-canvas');
+            sound.updateContinuous(false, 0, 0, 0);
+
+            document.getElementById('sirenOverlay').classList.add('hidden');
+            document.getElementById('mobileControls').classList.add('hidden');
+
+            document.getElementById('endReasonText').textContent = endReason;
+            document.getElementById('statTime').textContent = survivalTime.toFixed(1) + '초';
+            document.getElementById('statMaxStars').textContent = '★'.repeat(maxWantedReached);
+            document.getElementById('statCops').textContent = copsDestroyed + '대';
+            document.getElementById('statCivs').textContent = civDamageCount + '건';
+            document.getElementById('statCash').textContent = '$' + Math.floor(cash).toLocaleString();
+
+            setTimeout(() => {
+                document.getElementById('gameOverScreen').classList.remove('hidden');
+            }, 1250);
+        }
+
+        function startGame() {
+            sound.init();
+            canvas.classList.remove('wasted-canvas');
+            timeScale = 1.0;
+
+            cash = 0;
+            survivalTime = 0;
+            copsDestroyed = 0;
+            civDamageCount = 0;
+
+            wantedLevel = 1;
+            maxWantedReached = 1;
+            wantedHeat = 0;
+
+            chunkCache.clear();
+            aiVehicles = [];
+            peds = [];
+            bullets = [];
+            pickups = [];
+            skidMarks = [];
+            particles = [];
+            floatingTexts = [];
+            roadblocks = [];
+            roadblockCooldown = 4;
+            helicopter = null;
+
+            playerCar = new Vehicle(0, -CELL_SIZE / 2 + ROAD_WIDTH / 4, 'player', { angle: -Math.PI / 2 });
+            playerOnFoot = false; playerPed = null;
+            policeContactTime = 0;
+            document.getElementById('btnEnterExit').textContent = '내리기';
+
+            // 초기 순찰차 2대 & 시민 차량/보행자 스폰
+            spawnAroundPlayer('police');
+            spawnAroundPlayer('police');
+            for (let i = 0; i < 10; i++) spawnAroundPlayer('civilian');
+            for (let i = 0; i < 6; i++) spawnParkedVehicleAroundPlayer();
+            for (let i = 0; i < 16; i++) spawnPedAroundPlayer();
+
+            updateWantedStarsUI();
+            document.getElementById('sirenOverlay').classList.remove('hidden');
+            document.getElementById('startScreen').classList.add('hidden');
+            document.getElementById('gameOverScreen').classList.add('hidden');
+            document.getElementById('gameHUD').classList.remove('hidden');
+
+            if (window.innerWidth < 768) {
+                document.getElementById('mobileControls').classList.remove('hidden');
+                document.getElementById('mobileControls').classList.add('flex');
+            }
+
+            gameState = 'PLAYING';
+            lastTime = performance.now();
+        }
+
+        function update(rawDt) {
+            const dt = rawDt * timeScale;
+            globalTimer += dt;
+            if (screenShake > 0) screenShake = Math.max(0, screenShake - 38 * dt);
+
+            if (gameState !== 'PLAYING' && gameState !== 'WASTED') return;
+
+            if (gameState === 'PLAYING' && ((playerCar && !playerCar.destroyed) || (playerOnFoot && playerPed))) {
+                survivalTime += dt;
+                cash += (12 + wantedLevel * 10) * dt;
+
+                // 오래 도망칠수록 수배 게이지가 매우 천천히 차오르도록 설정 (기본 초당 +0.55)
+                addWantedHeat(0.55 * dt);
+
+                // 확대된 화면에 맞춰 마우스 좌표를 월드 좌표로 변환
+                const activePlayer = getActivePlayerPosition();
+                const camX = canvas.width / 2 - activePlayer.x - (playerOnFoot ? 0 : playerCar.vx * 0.14);
+                const camY = canvas.height / 2 - activePlayer.y - (playerOnFoot ? 0 : playerCar.vy * 0.14);
+                const aimZoom = 1.55;
+                mouse.worldX = (mouse.x - canvas.width / 2) / aimZoom + canvas.width / 2 - camX;
+                mouse.worldY = (mouse.y - canvas.height / 2) / aimZoom + canvas.height / 2 - camY;
+
+                // 차량 안과 도보 상태 모두 마우스 방향으로 사격
+                shootCooldown = Math.max(0, shootCooldown - dt);
+                if (mouse.down && shootCooldown <= 0) {
+                    const shooter = playerOnFoot ? playerPed : playerCar;
+                    if (!shooter) return;
+                    shootCooldown = playerOnFoot ? 0.34 : 0.22;
+                    const aimAngle = mouse.hasPointer
+                        ? Math.atan2(mouse.worldY - shooter.y, mouse.worldX - shooter.x)
+                        : shooter.angle;
+                    if (playerOnFoot) playerPed.angle = aimAngle;
+                    sound.playGunshot();
+                    const spread = playerOnFoot ? 0.10 : 0.06;
+                    fireBullet(shooter.x, shooter.y, aimAngle + (Math.random() - 0.5) * spread,
+                        playerOnFoot ? 720 : 860, playerOnFoot ? 18 : 26, 'player', '#fef08a');
+                }
+
+                // ★3부터 경찰이 예상 진행 방향 앞에 주기적으로 바리케이드 설치
+                if (wantedLevel >= 3 && !playerOnFoot) {
+                    roadblockCooldown -= dt;
+                    if (roadblockCooldown <= 0) {
+                        placeRoadblockAhead();
+                        roadblockCooldown = 7.5 + Math.random() * 2.5;
+                    }
+                }
+                roadblocks = roadblocks.filter(rb => (rb.life -= dt) > 0 && rb.hp > 0 &&
+                    playerCar && Math.hypot(rb.x - playerCar.x, rb.y - playerCar.y) < 1800);
+
+                // 수배 단계에 맞춘 여유로운 경찰차/특수차량 증원 스폰
+                const targetPoliceCount = [0, 2, 3, 5, 7, 9, 11][wantedLevel] || 2;
+                const activeCops = aiVehicles.filter(v => v.isPolice && !v.destroyed).length;
+                if (activeCops < targetPoliceCount && Math.random() < 0.032) {
+                    let copType = 'police';
+                    const r = Math.random();
+                    if (wantedLevel >= 6 && r < 0.32) copType = 'juggernaut';
+                    else if (wantedLevel >= 5 && r < 0.25) copType = 'fib';
+                    else if (wantedLevel >= 4 && r < 0.25) copType = 'swat';
+                    // ★3부터 다른 외형의 사격 전담 경찰차가 출동
+                    else if (wantedLevel >= 3 && r < 0.55) copType = 'shooter';
+                    // ★2부터 각진 중장갑 경찰차 (표준 경찰차 속도 85%)
+                    else if (wantedLevel >= 2 && r < 0.72) copType = 'armored';
+                    else if (wantedLevel >= 2 && r < 0.9) copType = 'interceptor';
+                    spawnAroundPlayer(copType);
+                }
+
+                // 시민 차량 & 보행자 유지 스폰
+                const activeCivs = aiVehicles.filter(v => !v.isPolice && !v.isParked && !v.destroyed).length;
+                if (activeCivs < 10 && Math.random() < 0.04) spawnAroundPlayer('civilian');
+                const parkedCount = aiVehicles.filter(v => v.isParked && !v.destroyed).length;
+                if (parkedCount < 6 && Math.random() < 0.025) spawnParkedVehicleAroundPlayer();
+                if (peds.length < 18 && Math.random() < 0.06) spawnPedAroundPlayer();
+
+                // 수리 아이템 스폰 (주변 도로 위)
+                if (pickups.length < 5 && Math.random() < 0.015) {
+                    const ang = Math.random() * Math.PI * 2;
+                    const dist = 550 + Math.random() * 450;
+                    const px = playerCar.x + Math.cos(ang) * dist;
+                    const py = playerCar.y + Math.sin(ang) * dist;
+                    if (!isPointInBuilding(px, py) && !isPointInDeepWater(px, py)) {
+                        pickups.push({ x: px, y: py, bob: 0 });
+                    }
+                }
+
+                // 수배 ★4 이상 추격 헬리콥터
+                if (wantedLevel >= 4) {
+                    if (!helicopter) {
+                        helicopter = { x: playerCar.x + 650, y: playerCar.y - 650, angle: 0, rotor: 0, shootTimer: 1.0 };
+                    }
+                    helicopter.rotor += 22 * dt;
+                    const hdx = playerCar.x - helicopter.x;
+                    const hdy = playerCar.y - helicopter.y;
+                    helicopter.angle = Math.atan2(hdy, hdx);
+                    if (Math.hypot(hdx, hdy) > 130) {
+                        helicopter.x += Math.cos(helicopter.angle) * (290 * 1.8) * dt;
+                        helicopter.y += Math.sin(helicopter.angle) * (290 * 1.8) * dt;
+                    }
+                    if (wantedLevel >= 5 && Math.hypot(hdx, hdy) < 330) {
+                        helicopter.shootTimer -= dt;
+                        if (helicopter.shootTimer <= 0) {
+                            helicopter.shootTimer = 0.7;
+                            fireBullet(helicopter.x, helicopter.y, helicopter.angle + (Math.random() - 0.5) * 0.25, 650, 6, 'cop', '#ef4444');
+                        }
+                    }
+                }
+            }
+
+            // 도보 이동과 차량/AI 업데이트
+            if (playerOnFoot) updatePlayerOnFoot(dt);
+            if (playerCar) playerCar.update(dt);
+            for (let i = aiVehicles.length - 1; i >= 0; i--) {
+                const v = aiVehicles[i];
+                v.update(dt);
+                if (v.destroyed || (playerCar && Math.hypot(v.x - playerCar.x, v.y - playerCar.y) > 2100)) {
+                    aiVehicles.splice(i, 1);
+                }
+            }
+            if (gameState === 'PLAYING' && !playerOnFoot && playerCar && !playerCar.destroyed) {
+                // 차체의 대각 반경으로 판정해 그래픽상 차체가 닿는 접촉도 감지
+                const playerRadius = Math.hypot(playerCar.width, playerCar.length) * 0.5;
+                const touchingPoliceCar = aiVehicles.some(v => v.isPolice && !v.destroyed &&
+                    Math.hypot(v.x - playerCar.x, v.y - playerCar.y) <=
+                    playerRadius + Math.hypot(v.width, v.length) * 0.5 + 5);
+                if (touchingPoliceCar) {
+                    policeContactTime += dt;
+                    policeContactGap = 0;
+                    if (!policeContactWarning) {
+                        showToast('경찰차에 붙잡혔습니다! 4초 안에 벗어나세요!', 'bg-rose-600');
+                        policeContactWarning = true;
+                    }
+                } else if (policeContactTime > 0) {
+                    // 충돌 반응으로 생기는 짧은 프레임 간격은 연속 접촉으로 간주
+                    policeContactGap += dt;
+                    if (policeContactGap > 0.35) {
+                        policeContactTime = 0;
+                        policeContactGap = 0;
+                        policeContactWarning = false;
+                    }
+                } else {
+                    policeContactGap = 0;
+                    policeContactWarning = false;
+                }
+                if (policeContactTime >= 4) {
+                    endReason = '경찰 차량과 4초 이상 접촉했습니다!';
+                    triggerWasted();
+                }
+            } else {
+                policeContactTime = 0;
+                policeContactGap = 0;
+                policeContactWarning = false;
+            }
+            if (playerOnFoot && playerPed && aiVehicles.some(v => v.isPolice && !v.destroyed &&
+                Math.hypot(v.x - playerPed.x, v.y - playerPed.y) < v.width * 0.55 + 9)) {
+                endReason = '도보 중 경찰차와 충돌했습니다!';
+                triggerWasted();
+            }
+            resolveAllCollisions();
+
+            // 보행자 업데이트 (치이면 수배 게이지 상승!)
+            for (let i = peds.length - 1; i >= 0; i--) {
+                const ped = peds[i];
+                if (playerCar && Math.hypot(ped.x - playerCar.x, ped.y - playerCar.y) > 1800) {
+                    peds.splice(i, 1);
+                    continue;
+                }
+
+                ped.timer -= dt;
+                if (ped.timer <= 0) {
+                    ped.timer = 1.5 + Math.random() * 2.0;
+                    ped.angle += (Math.random() - 0.5) * 2.4;
+                }
+                const spd = ped.panic ? 135 : 45;
+                ped.x += Math.cos(ped.angle) * spd * dt;
+                ped.y += Math.sin(ped.angle) * spd * dt;
+
+                if (isPointInBuilding(ped.x, ped.y) || isPointInDeepWater(ped.x, ped.y)) {
+                    ped.x -= Math.cos(ped.angle) * spd * dt * 1.5;
+                    ped.y -= Math.sin(ped.angle) * spd * dt * 1.5;
+                    ped.angle += Math.PI * 0.75;
+                }
+
+                // 차량 충격 판정
+                let hit = false;
+                if (playerCar && !playerCar.destroyed && Math.hypot(playerCar.x - ped.x, playerCar.y - ped.y) < 22) {
+                    hit = true;
+                    civDamageCount++;
+                    cash += 50;
+                    addWantedHeat(3.5); // 시민 피해 시 수배 게이지 완만 증가
+                    addFloatingText(ped.x, ped.y - 12, '수배도 소폭 상승! +$50', '#f43f5e');
+                }
+                if (hit) {
+                    for (let k = 0; k < 7; k++) {
+                        particles.push({
+                            x: ped.x, y: ped.y,
+                            vx: (Math.random() - 0.5) * 80,
+                            vy: (Math.random() - 0.5) * 80,
+                            size: 3 + Math.random() * 2.5,
+                            alpha: 0.85, color: '#dc2626', life: 0.4, maxLife: 0.4
+                        });
+                    }
+                    peds.splice(i, 1);
+                }
+            }
+
+            // 총알 업데이트
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                const b = bullets[i];
+                b.x += b.vx * dt;
+                b.y += b.vy * dt;
+                b.life -= dt;
+                let hit = isPointInBuilding(b.x, b.y);
+
+                if (!hit && b.owner === 'cop' && (playerOnFoot ? !!playerPed : (playerCar && !playerCar.destroyed))) {
+                    const target = getActivePlayerPosition();
+                    if (target && Math.hypot(b.x - target.x, b.y - target.y) < (playerOnFoot ? 12 : 18)) {
+                        hit = true;
+                        if (playerOnFoot) {
+                            endReason = '도보 중 경찰 총격에 맞았습니다!';
+                            triggerWasted();
+                        } else playerCar.hp -= b.damage;
+                        spawnSparks(b.x, b.y, 4);
+                    }
+                }
+
+                if (!hit && b.owner === 'player') {
+                    for (let vIdx = 0; vIdx < aiVehicles.length; vIdx++) {
+                        const v = aiVehicles[vIdx];
+                        if (!v.destroyed && Math.hypot(b.x - v.x, b.y - v.y) < v.width * 0.65) {
+                            hit = true;
+                            v.hp -= b.damage;
+                            spawnSparks(b.x, b.y, 4);
+                            if (v.isPolice) addWantedHeat(2.0);
+                            break;
+                        }
+                    }
+                    if (!hit) {
+                        for (let pIdx = peds.length - 1; pIdx >= 0; pIdx--) {
+                            const ped = peds[pIdx];
+                            if (Math.hypot(b.x - ped.x, b.y - ped.y) < 15) {
+                                hit = true;
+                                civDamageCount++;
+                                addWantedHeat(3.5);
+                                addFloatingText(ped.x, ped.y - 12, '수배도 소폭 상승!', '#f43f5e');
+                                peds.splice(pIdx, 1);
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (hit || b.life <= 0) bullets.splice(i, 1);
+            }
+
+            // 수리 픽업 업데이트
+            for (let i = pickups.length - 1; i >= 0; i--) {
+                const pk = pickups[i];
+                pk.bob += dt * 4;
+                if (playerCar && Math.hypot(playerCar.x - pk.x, playerCar.y - pk.y) < 38) {
+                    playerCar.hp = Math.min(playerCar.maxHp, playerCar.hp + 45);
+                    playerCar.nitro = Math.min(100, playerCar.nitro + 40);
+                    addFloatingText(pk.x, pk.y - 14, '차량 수리 & 니트로!', '#34d399');
+                    pickups.splice(i, 1);
+                } else if (playerCar && Math.hypot(playerCar.x - pk.x, playerCar.y - pk.y) > 1900) {
+                    pickups.splice(i, 1);
+                }
+            }
+
+            // 파티클 & 플로팅 텍스트
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const pt = particles[i];
+                pt.x += pt.vx * dt;
+                pt.y += pt.vy * dt;
+                pt.life -= dt;
+                pt.alpha = Math.max(0, pt.life / pt.maxLife);
+                if (pt.life <= 0) particles.splice(i, 1);
+            }
+
+            for (let i = floatingTexts.length - 1; i >= 0; i--) {
+                const ft = floatingTexts[i];
+                ft.y -= 30 * dt;
+                ft.life -= dt;
+                if (ft.life <= 0) floatingTexts.splice(i, 1);
+            }
+
+            if (gameState === 'PLAYING' && playerCar) {
+                const spdRatio = Math.hypot(playerCar.vx, playerCar.vy) / playerCar.maxSpeed;
+                sound.updateContinuous(true, spdRatio, wantedLevel, dt);
+                updateHUD();
+            }
+        }
+
+        /**
+         * ============================================================================
+         * 7. 무한 월드(강, 다리, 도시, 차량) & 레이더 미니맵 렌더링
+         * ============================================================================
+         */
+        function normalizeAngle(a) {
+            while (a > Math.PI) a -= Math.PI * 2;
+            while (a < -Math.PI) a += Math.PI * 2;
+            return a;
+        }
+
+        function roundRect(ctx, x, y, w, h, r) {
+            ctx.beginPath();
+            ctx.moveTo(x + r, y);
+            ctx.lineTo(x + w - r, y);
+            ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+            ctx.lineTo(x + w, y + h - r);
+            ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+            ctx.lineTo(x + r, y + h);
+            ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+            ctx.lineTo(x, y + r);
+            ctx.quadraticCurveTo(x, y, x + r, y);
+            ctx.closePath();
+        }
+
+        function render() {
+            const w = canvas.width;
+            const h = canvas.height;
+
+            // 아스팔트 도로 기본 배경
+            ctx.fillStyle = '#1c2028';
+            ctx.fillRect(0, 0, w, h);
+
+            const activePlayer = getActivePlayerPosition();
+            const px = activePlayer ? activePlayer.x : 0;
+            const py = activePlayer ? activePlayer.y : 0;
+            const pvx = playerOnFoot ? 0 : (playerCar ? playerCar.vx : 0);
+            const pvy = playerOnFoot ? 0 : (playerCar ? playerCar.vy : 0);
+
+            const shakeX = (Math.random() - 0.5) * screenShake;
+            const shakeY = (Math.random() - 0.5) * screenShake;
+            const camX = w / 2 - px - pvx * 0.14 + shakeX;
+            const camY = h / 2 - py - pvy * 0.14 + shakeY;
+
+            ctx.save();
+            // 월드 화면 확대 (HUD/미니맵은 별도 캔버스라 배율 영향 없음)
+            const zoom = 1.55;
+            ctx.translate(w / 2, h / 2);
+            ctx.scale(zoom, zoom);
+            ctx.translate(-w / 2, -h / 2);
+            ctx.translate(camX, camY);
+
+            // 현재 카메라 뷰포트 내 무한 그리드 범위 계산
+            const minGX = Math.floor((px - w * 0.8) / CELL_SIZE);
+            const maxGX = Math.ceil((px + w * 0.8) / CELL_SIZE);
+            const minGY = Math.floor((py - h * 0.8) / CELL_SIZE);
+            const maxGY = Math.ceil((py + h * 0.8) / CELL_SIZE);
+
+            // 1. 강(River) & 다리(Bridge) 및 도시 인도 블록 렌더링
+            for (let gx = minGX; gx <= maxGX; gx++) {
+                for (let gy = minGY; gy <= maxGY; gy++) {
+                    const chunk = getChunk(gx, gy);
+                    const centerX = gx * CELL_SIZE;
+                    const centerY = gy * CELL_SIZE;
+
+                    if (chunk.river) {
+                        // 깊은 강물 배경
+                        ctx.fillStyle = '#0c4a6e';
+                        ctx.fillRect(chunk.cellX, chunk.cellY, CELL_SIZE, CELL_SIZE);
+
+                        // 물결 일렁임 표현
+                        ctx.strokeStyle = 'rgba(56, 189, 248, 0.25)';
+                        ctx.lineWidth = 3;
+                        const waveOffset = Math.sin(globalTimer * 2 + gx + gy) * 14;
+                        for (let wy = chunk.cellY + 70; wy < chunk.cellY + CELL_SIZE; wy += 130) {
+                            ctx.beginPath();
+                            ctx.moveTo(chunk.cellX + 40 + waveOffset, wy);
+                            ctx.lineTo(chunk.cellX + 160 + waveOffset, wy);
+                            ctx.stroke();
+                        }
+
+                        // 다리 렌더링 (수평 다리 / 수직 다리)
+                        const bridgeW = ROAD_WIDTH * 0.96;
+                        if (chunk.bridges.horizontal) {
+                            drawBridge(ctx, chunk.cellX, centerY - bridgeW / 2, CELL_SIZE, bridgeW, true);
+                        }
+                        if (chunk.bridges.vertical) {
+                            drawBridge(ctx, centerX - bridgeW / 2, chunk.cellY, bridgeW, CELL_SIZE, false);
+                        }
+                    } else {
+                        // 구역에 따라 달라지는 도로변 블록 바닥
+                        const bx = chunk.cellX + ROAD_WIDTH / 2;
+                        const by = chunk.cellY + ROAD_WIDTH / 2;
+
+                        const districtGround = { park: '#34523b', plaza: '#555653', industrial: '#48443d', residential: '#423a38', commercial: '#343642', downtown: '#333b48', midtown: '#303b49', station: '#454b54' };
+                        ctx.fillStyle = districtGround[chunk.district] || '#333b48';
+                        roundRect(ctx, bx, by, BLOCK_SIZE, BLOCK_SIZE, 16);
+                        ctx.fill();
+                        ctx.strokeStyle = '#475569';
+                        ctx.lineWidth = 3;
+                        ctx.stroke();
+
+                        // 노란색 중앙선
+                        ctx.strokeStyle = 'rgba(250, 204, 21, 0.42)';
+                        ctx.lineWidth = 3;
+                        ctx.setLineDash([24, 24]);
+
+                        ctx.beginPath();
+                        ctx.moveTo(centerX, by);
+                        ctx.lineTo(centerX, by + BLOCK_SIZE);
+                        ctx.stroke();
+
+                        ctx.beginPath();
+                        ctx.moveTo(bx, centerY);
+                        ctx.lineTo(bx + BLOCK_SIZE, centerY);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                        if (chunk.district === 'station') {
+                            // 역 앞 광장 포장과 플랫폼 가장자리 선
+                            ctx.fillStyle = '#5b6065'; ctx.fillRect(bx + 18, by + BLOCK_SIZE * 0.63, BLOCK_SIZE - 36, 5);
+                            ctx.fillStyle = '#cbd5e1';
+                            for (let sx = bx + 38; sx < bx + BLOCK_SIZE - 30; sx += 34) ctx.fillRect(sx, by + BLOCK_SIZE * 0.63 + 8, 18, 3);
+                        }
+                        if (chunk.district === 'commercial') {
+                            // 상가 두 동 사이 보행자 통로
+                            ctx.fillStyle = '#292d35';
+                            ctx.fillRect(centerX - 18, by + 12, 36, BLOCK_SIZE - 24);
+                        } else if (chunk.district === 'downtown' && hash2D(gx, gy) >= 0.8) {
+                            // 안뜰형 블록의 골목 교차로를 건물 렌더링 전에 칠함
+                            ctx.fillStyle = '#292d35';
+                            ctx.fillRect(centerX - 27, by + 8, 54, BLOCK_SIZE - 16);
+                            ctx.fillRect(bx + 8, centerY - 27, BLOCK_SIZE - 16, 54);
+                            ctx.strokeStyle = 'rgba(203,213,225,0.18)'; ctx.lineWidth = 2;
+                            ctx.setLineDash([10, 12]); ctx.beginPath();
+                            ctx.moveTo(centerX, by + 12); ctx.lineTo(centerX, by + BLOCK_SIZE - 12); ctx.stroke();
+                            ctx.setLineDash([]);
+                        }
+                        if (chunk.district === 'park') {
+                            // 잔디 공원 안을 가로지르는 십자 산책로와 중앙 쉼터
+                            ctx.fillStyle = '#918c7d';
+                            ctx.fillRect(bx + BLOCK_SIZE * 0.455, by + 12, BLOCK_SIZE * 0.09, BLOCK_SIZE - 24);
+                            ctx.fillRect(bx + 12, by + BLOCK_SIZE * 0.455, BLOCK_SIZE - 24, BLOCK_SIZE * 0.09);
+                            ctx.fillStyle = '#aaa38f'; ctx.beginPath();
+                            ctx.arc(centerX, centerY, 34, 0, Math.PI * 2); ctx.fill();
+                            ctx.strokeStyle = '#6b7461'; ctx.lineWidth = 5; ctx.stroke();
+                        } else if (chunk.district === 'plaza') {
+                            // 광장 바닥의 석재 격자와 교차하는 타일 띠
+                            ctx.strokeStyle = 'rgba(226,232,240,0.11)'; ctx.lineWidth = 1;
+                            for (let t = 1; t < 8; t++) {
+                                const p = t * BLOCK_SIZE / 8;
+                                ctx.beginPath(); ctx.moveTo(bx + p, by + 8); ctx.lineTo(bx + p, by + BLOCK_SIZE - 8); ctx.stroke();
+                                ctx.beginPath(); ctx.moveTo(bx + 8, by + p); ctx.lineTo(bx + BLOCK_SIZE - 8, by + p); ctx.stroke();
+                            }
+                            ctx.fillStyle = '#77786f'; ctx.fillRect(bx + BLOCK_SIZE * 0.37, by + BLOCK_SIZE * 0.37, BLOCK_SIZE * 0.26, BLOCK_SIZE * 0.26);
+                        }
+                    }
+                }
+            }
+
+            // 2. 스키드 마크 & 폭발 그을음
+            skidMarks.forEach(sm => {
+                ctx.save();
+                ctx.translate(sm.x, sm.y);
+                ctx.rotate(sm.angle);
+                if (sm.isCrater) {
+                    ctx.fillStyle = `rgba(10, 10, 12, ${sm.alpha})`;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 26, 0, Math.PI * 2);
+                    ctx.fill();
+                } else {
+                    ctx.fillStyle = `rgba(12, 14, 18, ${sm.alpha})`;
+                    ctx.fillRect(-5, -2.5, 10, 5);
+                }
+                ctx.restore();
+            });
+
+            // 3. 수리 아이템
+            pickups.forEach(pk => {
+                const scale = 1 + Math.sin(pk.bob) * 0.14;
+                ctx.save();
+                ctx.translate(pk.x, pk.y);
+                ctx.scale(scale, scale);
+                ctx.fillStyle = 'rgba(16, 185, 129, 0.28)';
+                ctx.beginPath();
+                ctx.arc(0, 0, 18, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.font = '20px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('🔧', 0, 0);
+                ctx.restore();
+            });
+
+            // 4. 기물 (가로등, 소화전)
+            for (let gx = minGX; gx <= maxGX; gx++) {
+                for (let gy = minGY; gy <= maxGY; gy++) {
+                    const chunk = getChunk(gx, gy);
+                    chunk.props.forEach(pr => {
+                        if (pr.broken) {
+                            ctx.fillStyle = 'rgba(0,0,0,0.45)';
+                            ctx.beginPath();
+                            ctx.arc(pr.x, pr.y, 5, 0, Math.PI * 2);
+                            ctx.fill();
+                        } else if (pr.type === 'tree') {
+                            ctx.fillStyle = 'rgba(0,0,0,0.32)'; ctx.beginPath(); ctx.ellipse(pr.x + 5, pr.y + 7, 21, 16, 0, 0, Math.PI * 2); ctx.fill();
+                            ctx.fillStyle = '#70452b'; ctx.fillRect(pr.x - 4, pr.y - 1, 8, 17);
+                            ctx.fillStyle = '#166534'; ctx.beginPath(); ctx.arc(pr.x, pr.y - 7, 21, 0, Math.PI * 2); ctx.fill();
+                            ctx.fillStyle = '#22c55e'; ctx.beginPath(); ctx.arc(pr.x - 6, pr.y - 12, 12, 0, Math.PI * 2); ctx.fill();
+                        } else if (pr.type === 'stationSign') {
+                            ctx.fillStyle = '#78350f'; ctx.fillRect(pr.x - 46, pr.y - 11, 92, 23);
+                            ctx.fillStyle = '#fef3c7'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                            ctx.fillText('CENTRAL TERMINAL', pr.x, pr.y);
+                        } else if (pr.type === 'subway') {
+                            ctx.fillStyle = '#1e293b'; ctx.fillRect(pr.x - 23, pr.y - 13, 46, 28);
+                            ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 2; ctx.strokeRect(pr.x - 23, pr.y - 13, 46, 28);
+                            ctx.fillStyle = '#111827'; ctx.fillRect(pr.x - 15, pr.y - 8, 30, 18);
+                            ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 1;
+                            for (let step = 0; step < 4; step++) { ctx.beginPath(); ctx.moveTo(pr.x - 13, pr.y - 5 + step * 4); ctx.lineTo(pr.x + 13, pr.y - 5 + step * 4); ctx.stroke(); }
+                            ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.arc(pr.x, pr.y - 18, 9, 0, Math.PI * 2); ctx.fill();
+                            ctx.fillStyle = '#fff'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('M', pr.x, pr.y - 18);
+                        } else if (pr.type === 'dumpster') {
+                            ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(pr.x - 18, pr.y - 10, 40, 28);
+                            ctx.fillStyle = '#166534'; ctx.fillRect(pr.x - 20, pr.y - 13, 40, 26);
+                            ctx.fillStyle = '#14532d'; ctx.fillRect(pr.x - 22, pr.y - 16, 44, 5);
+                            ctx.strokeStyle = '#86efac'; ctx.lineWidth = 1; ctx.strokeRect(pr.x - 20, pr.y - 13, 40, 26);
+                        } else if (pr.type === 'fountain') {
+                            ctx.fillStyle = '#64748b'; ctx.beginPath(); ctx.arc(pr.x, pr.y, 29, 0, Math.PI * 2); ctx.fill();
+                            ctx.fillStyle = '#38bdf8'; ctx.beginPath(); ctx.arc(pr.x, pr.y, 21, 0, Math.PI * 2); ctx.fill();
+                            ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(pr.x, pr.y, 27, 0, Math.PI * 2); ctx.stroke();
+                            ctx.fillStyle = '#bae6fd'; ctx.beginPath(); ctx.arc(pr.x, pr.y, 6 + Math.sin(globalTimer * 4) * 2, 0, Math.PI * 2); ctx.fill();
+                        } else if (pr.type === 'bench') {
+                            ctx.fillStyle = '#713f12'; ctx.fillRect(pr.x - 15, pr.y - 4, 30, 8);
+                            ctx.fillStyle = '#a16207'; ctx.fillRect(pr.x - 15, pr.y - 8, 30, 4);
+                            ctx.fillStyle = '#292524'; ctx.fillRect(pr.x - 11, pr.y + 4, 3, 6); ctx.fillRect(pr.x + 8, pr.y + 4, 3, 6);
+                        } else if (pr.type === 'hydrant') {
+                            ctx.fillStyle = '#ef4444';
+                            ctx.beginPath();
+                            ctx.arc(pr.x, pr.y, 7, 0, Math.PI * 2);
+                            ctx.fill();
+                        } else {
+                            ctx.fillStyle = '#9ca3af';
+                            ctx.beginPath();
+                            ctx.arc(pr.x, pr.y, 6, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+                    });
+                }
+            }
+
+            // 경찰 바리케이드 렌더링
+            roadblocks.forEach(rb => {
+                ctx.save(); ctx.translate(rb.x, rb.y); ctx.rotate(rb.angle);
+                ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(-rb.length / 2 + 5, -rb.width / 2 + 5, rb.length, rb.width);
+                ctx.fillStyle = '#f8fafc'; ctx.fillRect(-rb.length / 2, -rb.width / 2, rb.length, rb.width);
+                ctx.save(); ctx.beginPath(); ctx.rect(-rb.length / 2, -rb.width / 2, rb.length, rb.width); ctx.clip();
+                ctx.fillStyle = '#ef4444';
+                for (let sx = -rb.length / 2 - 20; sx < rb.length / 2 + 20; sx += 32) {
+                    ctx.beginPath(); ctx.moveTo(sx, -rb.width / 2); ctx.lineTo(sx + 16, -rb.width / 2);
+                    ctx.lineTo(sx - 4, rb.width / 2); ctx.lineTo(sx - 20, rb.width / 2); ctx.closePath(); ctx.fill();
+                }
+                ctx.restore();
+                ctx.fillStyle = '#1f2937'; ctx.fillRect(-rb.length / 2, -rb.width / 2 - 5, rb.length, 5);
+                ctx.fillRect(-rb.length / 2, rb.width / 2, rb.length, 5);
+                const flash = Math.sin(globalTimer * 14) > 0;
+                ctx.fillStyle = flash ? '#ef4444' : '#3b82f6'; ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = 12;
+                ctx.fillRect(-rb.length / 2 + 8, -rb.width / 2 - 11, 15, 7);
+                ctx.fillStyle = flash ? '#3b82f6' : '#ef4444'; ctx.shadowColor = ctx.fillStyle;
+                ctx.fillRect(rb.length / 2 - 23, -rb.width / 2 - 11, 15, 7); ctx.shadowBlur = 0;
+                ctx.restore();
+            });
+
+            // 5. 보행자 렌더링
+            peds.forEach(ped => {
+                ctx.save();
+                ctx.translate(ped.x, ped.y);
+                ctx.rotate(ped.angle);
+                ctx.fillStyle = 'rgba(0,0,0,0.35)';
+                ctx.beginPath();
+                ctx.arc(2, 3, 8, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = ped.color;
+                roundRect(ctx, -5, -8, 10, 16, 4);
+                ctx.fill();
+                ctx.fillStyle = '#fed7aa';
+                ctx.beginPath();
+                ctx.arc(1, 0, 5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            });
+
+            // 6. AI 차량 & 플레이어 차량 렌더링
+            aiVehicles.forEach(v => v.draw(ctx));
+            if (playerCar) playerCar.draw(ctx);
+            if (playerOnFoot && playerPed) {
+                ctx.save(); ctx.translate(playerPed.x, playerPed.y); ctx.rotate(playerPed.angle);
+                ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.beginPath(); ctx.ellipse(1, 5, 8, 5, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = playerPed.color; roundRect(ctx, -6, -8, 12, 16, 4); ctx.fill();
+                ctx.fillStyle = '#fed7aa'; ctx.beginPath(); ctx.arc(3, 0, 5, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+                const closeParked = [playerCar, ...aiVehicles].find(v => v && v.isParked && !v.destroyed && Math.hypot(v.x - playerPed.x, v.y - playerPed.y) < 105);
+                if (closeParked) {
+                    ctx.save(); ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'center'; ctx.lineWidth = 4;
+                    ctx.strokeStyle = '#000'; ctx.strokeText('E  차량 탑승', closeParked.x, closeParked.y - 42);
+                    ctx.fillStyle = '#fde68a'; ctx.fillText('E  차량 탑승', closeParked.x, closeParked.y - 42); ctx.restore();
+                }
+            }
+
+            // 7. 총알 렌더링
+            bullets.forEach(b => {
+                ctx.save();
+                ctx.translate(b.x, b.y);
+                ctx.rotate(b.angle);
+                ctx.fillStyle = b.color;
+                ctx.shadowColor = b.color;
+                ctx.shadowBlur = 8;
+                ctx.fillRect(-8, -1.5, 16, 3);
+                ctx.restore();
+            });
+
+            // 8. 입체 건물 옥상 렌더링
+            for (let gx = minGX; gx <= maxGX; gx++) {
+                for (let gy = minGY; gy <= maxGY; gy++) {
+                    const chunk = getChunk(gx, gy);
+                    chunk.buildings.forEach(b => {
+                        const shadowStep = b.district === 'midtown' ? 20 + Math.floor(b.stories * 0.3) : 14;
+                        ctx.fillStyle = 'rgba(0,0,0,0.52)';
+                        ctx.fillRect(b.x + shadowStep, b.y + shadowStep + 2, b.w, b.h);
+
+                        ctx.fillStyle = b.color;
+                        ctx.fillRect(b.x, b.y, b.w, b.h);
+
+                        ctx.strokeStyle = '#475569';
+                        ctx.lineWidth = 4;
+                        ctx.strokeRect(b.x + 2, b.y + 2, b.w - 4, b.h - 4);
+
+                        ctx.fillStyle = b.accent;
+                        ctx.fillRect(b.x, b.y, b.w, 4);
+                        if (b.district === 'midtown') {
+                            // 유리 고층 빌딩의 반사면과 옥상 헬리패드
+                            ctx.fillStyle = 'rgba(125,211,252,0.12)';
+                            ctx.fillRect(b.x + b.w * 0.12, b.y + 8, b.w * 0.12, b.h - 16);
+                            ctx.fillRect(b.x + b.w * 0.76, b.y + 8, b.w * 0.08, b.h - 16);
+                            ctx.strokeStyle = 'rgba(186,230,253,0.42)'; ctx.lineWidth = 2;
+                            ctx.strokeRect(b.x + 5, b.y + 5, b.w - 10, b.h - 10);
+                            if (b.helipad) {
+                                const r = Math.min(27, b.w * 0.14, b.h * 0.14);
+                                ctx.fillStyle = 'rgba(15,23,42,0.72)'; ctx.beginPath(); ctx.arc(b.x + b.w * 0.52, b.y + b.h * 0.52, r, 0, Math.PI * 2); ctx.fill();
+                                ctx.strokeStyle = '#facc15'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(b.x + b.w * 0.52, b.y + b.h * 0.52, r - 2, 0, Math.PI * 2); ctx.stroke();
+                                ctx.fillStyle = '#fef3c7'; ctx.font = 'bold 17px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                                ctx.fillText('H', b.x + b.w * 0.52, b.y + b.h * 0.52);
+                            }
+                        } else if (b.district === 'residential' && b.style === 3) {
+                            // 브라운스톤 지붕의 물탱크와 벽돌색 굴뚝
+                            const tx = b.x + b.w * 0.68, ty = b.y + b.h * 0.3;
+                            ctx.fillStyle = '#70452e'; ctx.fillRect(tx - 9, ty + 6, 18, 15);
+                            ctx.fillStyle = '#a66b3d'; ctx.beginPath(); ctx.ellipse(tx, ty + 5, 10, 5, 0, 0, Math.PI * 2); ctx.fill();
+                            ctx.fillStyle = '#7c2d12'; ctx.fillRect(b.x + b.w * 0.22, b.y + b.h * 0.22, 8, 13);
+                        }
+                        if (b.district === 'commercial') {
+                            // 상업가 옥상의 네온 간판 패널
+                            const glow = 0.72 + Math.sin(globalTimer * 3 + b.x * 0.01) * 0.18;
+                            ctx.globalAlpha = glow;
+                            ctx.fillStyle = 'rgba(15,23,42,0.92)'; ctx.fillRect(b.x + b.w * 0.28, b.y + b.h * 0.42, b.w * 0.44, 22);
+                            ctx.strokeStyle = b.accent; ctx.lineWidth = 2; ctx.strokeRect(b.x + b.w * 0.28, b.y + b.h * 0.42, b.w * 0.44, 22);
+                            ctx.fillStyle = b.accent; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                            ctx.fillText('OPEN', b.x + b.w * 0.50, b.y + b.h * 0.42 + 11);
+                            ctx.globalAlpha = 1;
+                        }
+                        // 건물 스타일별 옥상 설비·채광창으로 블록의 인상을 다양화
+                        if (b.style === 0) {
+                            ctx.fillStyle = 'rgba(148,163,184,0.5)';
+                            for (let wx = b.x + 18; wx < b.x + b.w - 12; wx += 34) {
+                                ctx.fillRect(wx, b.y + 13, 12, 5);
+                                ctx.fillRect(wx, b.y + b.h - 20, 12, 5);
+                            }
+                        } else if (b.style === 1) {
+                            ctx.fillStyle = 'rgba(8,12,18,0.6)';
+                            ctx.fillRect(b.x + b.w * 0.28, b.y + b.h * 0.28, b.w * 0.44, b.h * 0.44);
+                            ctx.strokeStyle = b.accent;
+                            ctx.lineWidth = 3;
+                            ctx.strokeRect(b.x + b.w * 0.28, b.y + b.h * 0.28, b.w * 0.44, b.h * 0.44);
+                        } else if (b.style === 2) {
+                            ctx.fillStyle = 'rgba(203,213,225,0.48)';
+                            ctx.fillRect(b.x + b.w * 0.18, b.y + b.h * 0.22, 22, 16);
+                            ctx.fillRect(b.x + b.w * 0.62, b.y + b.h * 0.62, 26, 18);
+                            ctx.fillStyle = b.accent;
+                            ctx.fillRect(b.x + b.w * 0.18, b.y + b.h * 0.22, 22, 3);
+                        } else {
+                            // 환기구·급수 탱크가 있는 옥상
+                            ctx.fillStyle = 'rgba(15,23,42,0.72)';
+                            ctx.fillRect(b.x + b.w * 0.18, b.y + b.h * 0.2, 28, 20);
+                            ctx.fillRect(b.x + b.w * 0.58, b.y + b.h * 0.58, 36, 24);
+                            ctx.strokeStyle = 'rgba(203,213,225,0.6)'; ctx.lineWidth = 2;
+                            ctx.strokeRect(b.x + b.w * 0.18, b.y + b.h * 0.2, 28, 20);
+                            ctx.strokeRect(b.x + b.w * 0.58, b.y + b.h * 0.58, 36, 24);
+                        }
+                    });
+                }
+            }
+
+            // 9. 파티클 & 플로팅 텍스트
+            particles.forEach(pt => {
+                ctx.globalAlpha = pt.alpha;
+                ctx.fillStyle = pt.color;
+                ctx.beginPath();
+                ctx.arc(pt.x, pt.y, pt.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            ctx.globalAlpha = 1;
+
+            floatingTexts.forEach(ft => {
+                ctx.globalAlpha = Math.max(0, ft.life / ft.maxLife);
+                ctx.font = '900 15px "Noto Sans KR", sans-serif';
+                ctx.textAlign = 'center';
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 4;
+                ctx.strokeText(ft.text, ft.x, ft.y);
+                ctx.fillStyle = ft.color;
+                ctx.fillText(ft.text, ft.x, ft.y);
+            });
+            ctx.globalAlpha = 1;
+
+            // 10. ★4+ 추격 헬리콥터
+            if (helicopter && playerCar) {
+                ctx.fillStyle = 'rgba(254, 249, 195, 0.16)';
+                ctx.beginPath();
+                ctx.arc(px + Math.sin(globalTimer * 3) * 35, py + Math.cos(globalTimer * 2.5) * 35, 90, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.save();
+                ctx.translate(helicopter.x, helicopter.y);
+                ctx.rotate(helicopter.angle);
+                ctx.fillStyle = '#0f172a';
+                roundRect(ctx, -26, -12, 52, 24, 10);
+                ctx.fill();
+                ctx.fillRect(-44, -3, 22, 6);
+
+                ctx.rotate(helicopter.rotor);
+                ctx.fillStyle = 'rgba(226, 232, 240, 0.55)';
+                ctx.fillRect(-52, -2, 104, 4);
+                ctx.fillRect(-2, -52, 4, 104);
+                ctx.restore();
+            }
+
+            ctx.restore();
+
+            // 11. 미니맵 레이더 렌더링 (강 & 다리 위치 강조 표시)
+            renderMinimap(px, py);
+        }
+
+        function drawBridge(ctx, x, y, w, h, isHorizontal) {
+            // 교량 그림자와 콘크리트 상판
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+            ctx.fillRect(x + 8, y + 10, w, h);
+            ctx.fillStyle = '#475569';
+            ctx.fillRect(x, y, w, h);
+
+            // 노란 중앙 차선 대신 상판 이음매를 표시해 물 위의 일반 도로와 구별
+            ctx.strokeStyle = 'rgba(203,213,225,0.38)';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            if (isHorizontal) {
+                for (let px = x + 36; px < x + w; px += 48) {
+                    ctx.moveTo(px, y + 10);
+                    ctx.lineTo(px, y + h - 10);
+                }
+            } else {
+                for (let py = y + 36; py < y + h; py += 48) {
+                    ctx.moveTo(x + 10, py);
+                    ctx.lineTo(x + w - 10, py);
+                }
+            }
+            ctx.stroke();
+
+            // 교량 양쪽 가드레일과 지지 기둥
+            ctx.fillStyle = '#cbd5e1';
+            if (isHorizontal) {
+                ctx.fillRect(x, y, w, 9);
+                ctx.fillRect(x, y + h - 9, w, 9);
+                for (let px = x + 18; px < x + w; px += 42) {
+                    ctx.fillRect(px, y + 1, 4, 7);
+                    ctx.fillRect(px, y + h - 8, 4, 7);
+                }
+            } else {
+                ctx.fillRect(x, y, 9, h);
+                ctx.fillRect(x + w - 9, y, 9, h);
+                for (let py = y + 18; py < y + h; py += 42) {
+                    ctx.fillRect(x + 1, py, 7, 4);
+                    ctx.fillRect(x + w - 8, py, 7, 4);
+                }
+            }
+        }
+
+        function renderMinimap(px, py) {
+            const mw = minimapCanvas.width;
+            const mh = minimapCanvas.height;
+            const cx = mw / 2;
+            const cy = mh / 2;
+            const range = 2400;
+            const scale = (mw / 2) / range;
+
+            minimapCtx.clearRect(0, 0, mw, mh);
+
+            const minGX = Math.floor((px - range) / CELL_SIZE);
+            const maxGX = Math.ceil((px + range) / CELL_SIZE);
+            const minGY = Math.floor((py - range) / CELL_SIZE);
+            const maxGY = Math.ceil((py + range) / CELL_SIZE);
+
+            // 강물 & 다리 & 건물 블록 표시
+            for (let gx = minGX; gx <= maxGX; gx++) {
+                for (let gy = minGY; gy <= maxGY; gy++) {
+                    const chunk = getChunk(gx, gy);
+                    const rx = (chunk.cellX - px) * scale + cx;
+                    const ry = (chunk.cellY - py) * scale + cy;
+                    const rSize = CELL_SIZE * scale;
+
+                    if (chunk.river) {
+                        // 강물 (파란색)
+                        minimapCtx.fillStyle = 'rgba(14, 116, 144, 0.75)';
+                        minimapCtx.fillRect(rx, ry, rSize, rSize);
+
+                        // 다리 (밝은 회색/노란색으로 명확하게 강조!)
+                        const bridgeW = ROAD_WIDTH * 0.96 * scale;
+                        minimapCtx.fillStyle = '#facc15';
+                        if (chunk.bridges.horizontal) {
+                            minimapCtx.fillRect(rx, ry + rSize / 2 - bridgeW / 2, rSize, bridgeW);
+                        }
+                        if (chunk.bridges.vertical) {
+                            minimapCtx.fillRect(rx + rSize / 2 - bridgeW / 2, ry, bridgeW, rSize);
+                        }
+                    } else {
+                        minimapCtx.fillStyle = 'rgba(148, 163, 184, 0.25)';
+                        chunk.buildings.forEach(b => {
+                            minimapCtx.fillRect(
+                                (b.x - px) * scale + cx,
+                                (b.y - py) * scale + cy,
+                                b.w * scale,
+                                b.h * scale
+                            );
+                        });
+                    }
+                }
+            }
+
+            // 경찰차 점멸 아이콘
+            const blink = Math.sin(globalTimer * 16) > 0;
+            aiVehicles.forEach(v => {
+                if (!v.isPolice || v.destroyed) return;
+                let dx = (v.x - px) * scale;
+                let dy = (v.y - py) * scale;
+                const d = Math.hypot(dx, dy);
+                const maxR = mw / 2 - 7;
+                if (d > maxR) {
+                    dx = (dx / d) * maxR;
+                    dy = (dy / d) * maxR;
+                }
+                minimapCtx.fillStyle = blink ? '#ef4444' : '#3b82f6';
+                minimapCtx.beginPath();
+                minimapCtx.arc(cx + dx, cy + dy, 3.2, 0, Math.PI * 2);
+                minimapCtx.fill();
+            });
+
+            // 플레이어 화살표
+            if (playerCar) {
+                minimapCtx.save();
+                minimapCtx.translate(cx, cy);
+                minimapCtx.rotate(playerCar.angle);
+                minimapCtx.fillStyle = '#ffffff';
+                minimapCtx.beginPath();
+                minimapCtx.moveTo(6, 0);
+                minimapCtx.lineTo(-4, -4);
+                minimapCtx.lineTo(-2, 0);
+                minimapCtx.lineTo(-4, 4);
+                minimapCtx.closePath();
+                minimapCtx.fill();
+                minimapCtx.restore();
+            }
+        }
+
+        function gameLoop(timestamp) {
+            const rawDt = Math.min(0.05, (timestamp - lastTime) / 1000);
+            lastTime = timestamp;
+
+            update(rawDt);
+            render();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        /**
+         * ============================================================================
+         * 8. 입력 이벤트 처리
+         * ============================================================================
+         */
+        function handleResize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', handleResize);
+        handleResize();
+
+        window.addEventListener('mousemove', (e) => {
+            mouse.x = e.clientX;
+            mouse.y = e.clientY;
+            mouse.hasPointer = true;
+        });
+        window.addEventListener('mousedown', (e) => {
+            if (e.button === 0 && gameState === 'PLAYING') mouse.down = true;
+        });
+        window.addEventListener('mouseup', (e) => {
+            if (e.button === 0) mouse.down = false;
+        });
+
+        window.addEventListener('keydown', (e) => {
+            const c = e.code;
+            if (c === 'KeyW' || c === 'ArrowUp') keys.up = true;
+            if (c === 'KeyS' || c === 'ArrowDown') keys.down = true;
+            if (c === 'KeyA' || c === 'ArrowLeft') keys.left = true;
+            if (c === 'KeyD' || c === 'ArrowRight') keys.right = true;
+            if (c === 'Space') { keys.space = true; e.preventDefault(); }
+            if (c === 'ShiftLeft' || c === 'ShiftRight') keys.shift = true;
+            if (c === 'KeyE' && !e.repeat) togglePlayerVehicle();
+        });
+
+        window.addEventListener('keyup', (e) => {
+            const c = e.code;
+            if (c === 'KeyW' || c === 'ArrowUp') keys.up = false;
+            if (c === 'KeyS' || c === 'ArrowDown') keys.down = false;
+            if (c === 'KeyA' || c === 'ArrowLeft') keys.left = false;
+            if (c === 'KeyD' || c === 'ArrowRight') keys.right = false;
+            if (c === 'Space') keys.space = false;
+            if (c === 'ShiftLeft' || c === 'ShiftRight') keys.shift = false;
+        });
+
+        function bindMobileBtn(id, onPress, onRelease) {
+            const btn = document.getElementById(id);
+            if (!btn) return;
+            btn.addEventListener('touchstart', (e) => { e.preventDefault(); btn.classList.add('pressed'); onPress(); }, { passive: false });
+            btn.addEventListener('touchend', (e) => { e.preventDefault(); btn.classList.remove('pressed'); onRelease(); }, { passive: false });
+        }
+
+        bindMobileBtn('btnLeft', () => keys.left = true, () => keys.left = false);
+        bindMobileBtn('btnRight', () => keys.right = true, () => keys.right = false);
+        bindMobileBtn('btnGas', () => keys.up = true, () => keys.up = false);
+        bindMobileBtn('btnBrake', () => keys.down = true, () => keys.down = false);
+        bindMobileBtn('btnNitro', () => keys.shift = true, () => keys.shift = false);
+        bindMobileBtn('btnShoot', () => mouse.down = true, () => mouse.down = false);
+        document.getElementById('btnEnterExit').addEventListener('click', togglePlayerVehicle);
+
+        document.getElementById('startBtn').addEventListener('click', startGame);
+        document.getElementById('restartBtn').addEventListener('click', startGame);
+
+        document.getElementById('muteBtn').addEventListener('click', () => {
+            sound.init();
+            const isMuted = sound.toggleMute();
+            document.getElementById('muteIcon').textContent = isMuted ? '🔇' : '🔊';
+        });
+
+        window.onload = function () {
+            playerCar = new Vehicle(0, -CELL_SIZE / 2 + ROAD_WIDTH / 4, 'player', { angle: -Math.PI / 2 });
+            lastTime = performance.now();
+            requestAnimationFrame(gameLoop);
+        };
+    </script>
+</body>
+</html>
