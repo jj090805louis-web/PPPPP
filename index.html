@@ -211,28 +211,28 @@
 
     <!-- 시작 화면 -->
     <div id="startScreen" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-40 flex items-center justify-center p-4">
-        <div class="max-w-lg w-full bg-neutral-900/95 border border-white/15 rounded-2xl p-6 sm:p-8 text-center shadow-2xl relative overflow-hidden">
+        <div class="max-w-lg w-full bg-neutral-900/95 border border-white/15 rounded-2xl p-6 sm:p-8 text-center shadow-2xl relative overflow-hidden" style="border-radius: 0px;">
             <div class="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-pink-500 via-amber-400 to-cyan-400"></div>
             
             <span class="inline-block px-3 py-1 rounded-full bg-rose-500/20 border border-rose-500/40 text-rose-400 text-xs font-black tracking-widest mb-2">
                 ENDLESS POLICE PURSUIT
             </span>
-            <h1 class="gta-font text-4xl sm:text-5xl text-white mb-2">추격전</h1>
-            <p class="text-gray-400 text-sm mb-5">경찰의 추격 속에서 최대한 오래 살아남으세요</p>
+            <h1 class="gta-font text-4xl sm:text-5xl text-white mb-2"> 추격전</h1>
+            <p class="text-gray-400 text-sm mb-5"> 경찰의 추격 속에서 최대한 오래 살아남으세요</p>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left text-xs bg-black/55 p-4 rounded-xl border border-white/10 mb-6">
                 <div class="space-y-1.5">
-                    <div class="text-cyan-400 font-black text-sm">🌉 무한 도시 &amp; 강/다리</div>
-                    <p class="text-gray-300">• 맵 경계 없이 끝없이 이어지는 도시와 거대한 강줄기!</p>
-                    <p class="text-gray-300">• 강에 빠지면 차량이 침수되니 미니맵의 <b class="text-amber-300">다리</b>를 찾아 건너세요.</p>
+                    
+                    
+                    
                 </div>
                 <div class="space-y-1.5">
-                    <div class="text-amber-400 font-black text-sm">⭐ 수배 등급 상승 (★1~★6)</div>
-                    <p class="text-gray-300">• 오래 도망칠수록 수배 게이지가 서서히 차오릅니다.</p>
-                    <p class="text-gray-300">• 경찰차 파괴, 시민 충격 등 난폭한 행동을 할수록 별이 빠르게 늘어납니다</p>
+                    <div class="text-amber-400 font-black text-sm" style="position: relative; left: -54%; top: -2px; z-index: 5;">⭐ 수배 등급 상승 (★1~★6)</div>
+                    <p class="text-gray-300" style="position: relative; left: -53%; top: 0px; z-index: 5;">• 오래 도망칠수록 수배 게이지가 서서히 차오릅니다.</p>
+                    <p class="text-gray-300" style="position: relative; left: -53%; top: 3px; z-index: 5;">• <b class="text-rose-400">경찰차 파괴, 시민 충격</b> 등 난폭한 행동을 할수록 별이 빠르게 늘어납니다!</p>
                 </div>
             </div>
-            <button id="startBtn" class="w-full py-4 rounded-xl bg-gradient-to-r from-pink-600 via-rose-600 to-amber-500 hover:brightness-110 text-white font-black text-lg tracking-wider shadow-lg shadow-rose-600/30 transition transform hover:scale-[1.01] active:scale-[0.99]">도주 시작</button>
+            <button id="startBtn" class="w-full py-4 rounded-xl bg-gradient-to-r from-pink-600 via-rose-600 to-amber-500 hover:brightness-110 text-white font-black text-lg tracking-wider shadow-lg shadow-rose-600/30 transition transform hover:scale-[1.01] active:scale-[0.99]" style="font-size: 28px; background-color: rgb(237, 44, 44); border-radius: 0px;">도주 시작 </button>
         </div>
     </div>
 
@@ -733,8 +733,8 @@
                 width: 24, length: 45, maxSpeed: 210, accel: 360, turnSpeed: 2.8,
                 maxHp: 85, mass: 1.1
             },
-            parkedCar: { width: 26, length: 48, maxSpeed: 300, accel: 430, turnSpeed: 3.0, maxHp: 105, mass: 1.25 },
-            parkedTruck: { width: 34, length: 66, maxSpeed: 285, accel: 350, turnSpeed: 2.25, maxHp: 210, mass: 2.1 },
+            parkedCar: { width: 26, length: 48, maxSpeed: 420, accel: 560, turnSpeed: 3.0, maxHp: 105, mass: 1.25 },
+            parkedTruck: { width: 34, length: 66, maxSpeed: 350, accel: 390, turnSpeed: 2.25, maxHp: 210, mass: 2.1 },
             police: {
                 width: 24, length: 46, maxSpeed: 385, accel: 510, turnSpeed: 3.2,
                 maxHp: 100, mass: 1.2
@@ -837,6 +837,8 @@
                 this.aiStuckTimer = 0;
                 this.aiReverseTimer = 0;
                 this.aiTurnCooldown = 0;
+                this.aiFlankSide = Math.random() < 0.5 ? -1 : 1;
+                this.aiAvoidSide = Math.random() < 0.5 ? -1 : 1;
                 this.copShootTimer = 0.8 + Math.random() * 0.8;
             }
 
@@ -980,9 +982,24 @@
                 const dx = chaseTarget.x - this.x;
                 const dy = chaseTarget.y - this.y;
                 const dist = Math.hypot(dx, dy);
+                const targetVx = playerOnFoot ? (chaseTarget.vx || 0) : (playerCar ? playerCar.vx : 0);
+                const targetVy = playerOnFoot ? (chaseTarget.vy || 0) : (playerCar ? playerCar.vy : 0);
+                const leadTime = Math.min(0.7, Math.max(0.12, dist / 900));
+                let aimX = chaseTarget.x + targetVx * leadTime;
+                let aimY = chaseTarget.y + targetVy * leadTime;
+                // ★2부터 경찰차를 좌우로 나눠 움직이는 플레이어의 앞길을 포위
+                if (wantedLevel >= 2 && dist > 150) {
+                    const targetSpeed = Math.hypot(targetVx, targetVy);
+                    const travelAngle = targetSpeed > 45 ? Math.atan2(targetVy, targetVx) : Math.atan2(dy, dx);
+                    const flank = Math.min(82, 24 + (wantedLevel - 2) * 12);
+                    aimX += -Math.sin(travelAngle) * this.aiFlankSide * flank;
+                    aimY += Math.cos(travelAngle) * this.aiFlankSide * flank;
+                }
+                const aimDx = aimX - this.x;
+                const aimDy = aimY - this.y;
 
                 // 건물 & 강물 회피 센서 (경찰차도 다리를 통해 강을 건너도록 유도)
-                const sensorDist = 90;
+                const sensorDist = 145;
                 const leftAngle = this.angle - 0.48;
                 const rightAngle = this.angle + 0.48;
                 const lx = this.x + Math.cos(leftAngle) * sensorDist;
@@ -992,17 +1009,23 @@
 
                 const leftBlocked = isPointInBuilding(lx, ly) || isPointInDeepWater(lx, ly);
                 const rightBlocked = isPointInBuilding(rx, ry) || isPointInDeepWater(rx, ry);
+                const centerX = this.x + Math.cos(this.angle) * (sensorDist + 35);
+                const centerY = this.y + Math.sin(this.angle) * (sensorDist + 35);
+                const centerBlocked = isPointInBuilding(centerX, centerY) || isPointInDeepWater(centerX, centerY);
 
                 let avoid = 0;
-                if (leftBlocked && !rightBlocked) avoid = 0.95;
+                if (centerBlocked && !leftBlocked && rightBlocked) avoid = -1.2;
+                else if (centerBlocked && leftBlocked && !rightBlocked) avoid = 1.2;
+                else if (centerBlocked) avoid = this.aiAvoidSide * 1.35;
+                else if (leftBlocked && !rightBlocked) avoid = 0.95;
                 else if (rightBlocked && !leftBlocked) avoid = -0.95;
-                else if (leftBlocked && rightBlocked) avoid = 1.45;
+                else if (leftBlocked && rightBlocked) avoid = this.aiAvoidSide * 1.45;
 
                 const speed = Math.hypot(this.vx, this.vy);
                 if (speed < 30) {
                     this.aiStuckTimer += dt;
-                    if (this.aiStuckTimer > 1.0) {
-                        this.aiReverseTimer = 0.65;
+                    if (this.aiStuckTimer > 0.8) {
+                        this.aiReverseTimer = 0.8;
                         this.aiStuckTimer = 0;
                     }
                 } else {
@@ -1040,7 +1063,7 @@
                 }
 
                 // 목표 방향 계산 (다리를 찾아 건너거나 플레이어를 직접 추격)
-                let targetAngle = Math.atan2(dy, dx);
+                let targetAngle = Math.atan2(aimDy, aimDx);
                 if (isPointInDeepWater(this.x + Math.cos(targetAngle) * 110, this.y + Math.sin(targetAngle) * 110)) {
                     const gx = Math.round(this.x / CELL_SIZE);
                     const gy = Math.round(this.y / CELL_SIZE);
@@ -1048,15 +1071,17 @@
                 }
 
                 const diff = normalizeAngle(targetAngle + avoid - this.angle);
-                const turnRate = this.turnSpeed * Math.min(1, speed / 75);
+                const turnRate = this.turnSpeed * Math.min(1, speed / 75) * (dist < 260 ? 1.12 : 1);
                 this.angle += Math.max(-turnRate * dt, Math.min(turnRate * dt, diff));
 
-                // 너무 가까우면 살짝 속도를 조절해 연쇄 추돌/포위 유도
-                const desiredSpeed = dist < 130 ? this.maxSpeed * 0.72 : this.maxSpeed * 0.92;
-                const currentForward = this.vx * fx + this.vy * fy;
+                // 예측한 진행 방향으로 더 적극적으로 가속해 추격 공백을 줄임
+                const desiredSpeed = dist < 105 ? this.maxSpeed * 0.78 : this.maxSpeed * 0.98;
+                const driveFx = Math.cos(this.angle);
+                const driveFy = Math.sin(this.angle);
+                const currentForward = this.vx * driveFx + this.vy * driveFy;
                 if (currentForward < desiredSpeed) {
-                    this.vx += fx * this.accel * 0.85 * dt;
-                    this.vy += fy * this.accel * 0.85 * dt;
+                    this.vx += driveFx * this.accel * 0.95 * dt;
+                    this.vy += driveFy * this.accel * 0.95 * dt;
                 }
             }
 
@@ -1308,6 +1333,8 @@
                 }
                 aiVehicles = aiVehicles.filter(v => v !== nearest);
                 nearest.role = 'player'; nearest.isPolice = false; nearest.isParked = false;
+                nearest.maxSpeed = nearest.vehicleStyle === 'truck' ? VEHICLE_SPECS.parkedTruck.maxSpeed : VEHICLE_SPECS.player.maxSpeed;
+                nearest.accel = nearest.vehicleStyle === 'truck' ? VEHICLE_SPECS.parkedTruck.accel : VEHICLE_SPECS.player.accel;
                 nearest.nitro = Math.max(nearest.nitro || 0, 50); playerCar = nearest;
             } else nearest.isParked = false;
             playerOnFoot = false; playerPed = null;
@@ -1318,15 +1345,18 @@
             showToast(nearest.vehicleStyle === 'truck' ? '트럭을 탈취했습니다!' : '차량을 탈취했습니다!', 'bg-emerald-600');
         }
         function updatePlayerOnFoot(dt) {
-            if (!playerPed) return;
+            if (!playerPed || dt <= 0) return;
             let dx = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
             let dy = (keys.down ? 1 : 0) - (keys.up ? 1 : 0);
             const len = Math.hypot(dx, dy);
-            if (!len) return;
+            if (!len) { playerPed.vx = 0; playerPed.vy = 0; return; }
             dx /= len; dy /= len; playerPed.angle = Math.atan2(dy, dx);
+            const oldX = playerPed.x, oldY = playerPed.y;
             const step = 190 * dt, nx = playerPed.x + dx * step, ny = playerPed.y + dy * step;
             if (!isPointInBuilding(nx, playerPed.y) && !isPointInDeepWater(nx, playerPed.y)) playerPed.x = nx;
             if (!isPointInBuilding(playerPed.x, ny) && !isPointInDeepWater(playerPed.x, ny)) playerPed.y = ny;
+            playerPed.vx = (playerPed.x - oldX) / dt;
+            playerPed.vy = (playerPed.y - oldY) / dt;
         }
 
         function addWantedHeat(amount) {
